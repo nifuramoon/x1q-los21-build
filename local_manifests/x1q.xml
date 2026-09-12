@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="Youras-Eutopia/android_device_samsung_x1q"
+           path="device/samsung/x1q"
+           remote="github" revision="lineage-21" />
+  <project name="Youras-Eutopia/android_device_samsung_sm8250-common"
+           path="device/samsung/sm8250-common"
+           remote="github" revision="lineage-21" />
+  <project name="Youras-Eutopia/android_kernel_samsung_sm8250"
+           path="kernel/samsung/sm8250"
+           remote="github" revision="lineage-21" />
+  <project name="LineageOS/android_hardware_samsung"
+           path="hardware/samsung"
+           remote="github" revision="lineage-21.0" />
+</manifest>
