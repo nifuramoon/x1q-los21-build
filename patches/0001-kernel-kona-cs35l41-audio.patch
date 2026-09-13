@@ -1,0 +1,68 @@
+diff --git a/techpack/audio/asoc/kona.c b/techpack/audio/asoc/kona.c
+index 5a214399ea73..74c778c6ef9b 100644
+--- a/techpack/audio/asoc/kona.c
++++ b/techpack/audio/asoc/kona.c
+@@ -9505,6 +9505,55 @@ static void parse_cps_configuration(struct platform_device *pdev,
+ 	}
+ }
+ 
++#ifdef CONFIG_SND_SOC_CS35L41
++/*
++ * The generic QCOM machine driver hardcodes the CS35L41 codec device names
++ * (cs35l41-codec.0.auto / .4.auto). The CS35L41 MFD core assigns those IDs at
++ * runtime with PLATFORM_DEVID_AUTO, so on boards where the global auto-ID
++ * counter is offset the real names become e.g. cs35l41-codec.1.auto / .5.auto.
++ * snd_soc_register_card() then fails with "CODEC DAI cs35l41-pcm not registered"
++ * and the whole sound card never registers (no ALSA card, no audio at all).
++ *
++ * Resolve the amplifier nodes from the device tree and bind the DAI links and
++ * the codec prefixes by of_node instead of by name so boot order cannot break it.
++ */
++static void msm_setup_cs35l41_components(struct platform_device *pdev)
++{
++	struct device_node *amp, *parent, *child;
++	int i = 0;
++
++	amp = of_parse_phandle(pdev->dev.of_node, "qcom,component-devs", 0);
++	if (!amp) {
++		dev_info(&pdev->dev, "%s: no qcom,component-devs\n", __func__);
++		return;
++	}
++
++	parent = of_get_parent(amp);
++	if (!parent) {
++		dev_info(&pdev->dev, "%s: no parent for amp\n", __func__);
++		return;
++	}
++
++	for_each_child_of_node(parent, child) {
++		if (!of_device_is_compatible(child, "cirrus,cs35l41"))
++			continue;
++		if (i >= ARRAY_SIZE(cs35l41_spk))
++			break;
++
++		of_node_get(child);
++		cs35l41_spk[i].name = NULL;
++		cs35l41_spk[i].of_node = child;
++		if (i < ARRAY_SIZE(cs35l41_conf)) {
++			cs35l41_conf[i].dev_name = NULL;
++			cs35l41_conf[i].of_node = child;
++		}
++		dev_info(&pdev->dev, "%s: cs35l41[%d] -> %s\n",
++			 __func__, i, child->full_name);
++		i++;
++	}
++}
++#endif
++
+ static int msm_asoc_machine_probe(struct platform_device *pdev)
+ {
+ 	struct snd_soc_card *card = NULL;
+@@ -9583,6 +9632,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
+ #ifdef CONFIG_SND_SOC_CS35L41
+ 	card->codec_conf = cs35l41_conf;
+ 	card->num_configs = ARRAY_SIZE(cs35l41_conf);
++	msm_setup_cs35l41_components(pdev);
+ #endif
+ 
+ 	ret = devm_snd_soc_register_card(&pdev->dev, card);

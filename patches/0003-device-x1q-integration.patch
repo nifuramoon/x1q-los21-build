@@ -1,0 +1,97 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index beb9b21..cc1e9e7 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -8,6 +8,9 @@ include device/samsung/sm8250-common/BoardConfigCommon.mk
+ 
+ DEVICE_PATH := device/samsung/x1q
+ 
++# Root (LineageOS built-in su / adb_root)
++WITH_SU := true
++
+ # Camera
+ SOONG_CONFIG_samsungCameraVars += extra_ids
+ SOONG_CONFIG_samsungCameraVars_extra_ids := 52 # telephoto
+diff --git a/lineage_x1q.mk b/lineage_x1q.mk
+index 2471c2c..7621282 100644
+--- a/lineage_x1q.mk
++++ b/lineage_x1q.mk
+@@ -3,6 +3,10 @@
+ # SPDX-License-Identifier: Apache-2.0
+ #
+ 
++# Root: include LineageOS built-in su + adb_root (see vendor/lineage/config/common.mk).
++# Must be set before inheriting common_full_phone.mk.
++WITH_SU := true
++
+ # Inherit from those products. Most specific first.
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
+diff --git a/s20volte_ims/Android.mk b/s20volte_ims/Android.mk
+new file mode 100644
+index 0000000..414b054
+--- /dev/null
++++ b/s20volte_ims/Android.mk
+@@ -0,0 +1,20 @@
++# Install the prebuilt Samsung IMS RRO into /product/overlay.
++# It is a static RRO targeting com.android.phone that redirects the platform IMS
++# package resources (config_ims_mmtel_package / config_ims_rcs_package) to
++# com.sec.imsservice, so the AOSP telephony framework binds the Samsung IMS
++# service and VoLTE calls/SMS work. It must live on the /product overlay path
++# (the platform RRO scanner only scans <partition>/overlay, not <partition>/app),
++# and it must keep its original signature/settings, hence PRESIGNED.
++LOCAL_PATH := $(call my-dir)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := S20VoLTEImsOverlay
++LOCAL_MODULE_OWNER := samsung
++LOCAL_SRC_FILES := system/product/overlay/S20VoLTEImsOverlay.apk
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_PATH := $(TARGET_OUT_PRODUCT)/overlay
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_DEX_PREOPT := false
++LOCAL_MODULE_TAGS := optional
++LOCAL_PRODUCT_MODULE := true
++include $(BUILD_PREBUILT)
+diff --git a/s20volte_ims/s20volte_ims.mk b/s20volte_ims/s20volte_ims.mk
+index ae55224..825b4b5 100644
+--- a/s20volte_ims/s20volte_ims.mk
++++ b/s20volte_ims/s20volte_ims.mk
+@@ -1,4 +1,5 @@
+ # Auto-generated: integrate s20volte_ims (VoLTE/SMS) into the ROM image
++PRODUCT_PACKAGES += imsservice
+ PRODUCT_COPY_FILES += \
+     device/samsung/x1q/s20volte_ims/system/bin/charon:$(TARGET_COPY_OUT_SYSTEM)/bin/charon \
+     device/samsung/x1q/s20volte_ims/system/bin/connfwexe:$(TARGET_COPY_OUT_SYSTEM)/bin/connfwexe \
+@@ -59,6 +60,9 @@ PRODUCT_COPY_FILES += \
+     device/samsung/x1q/s20volte_ims/system/lib64/vendor.samsung.hardware.radio-V1-ndk.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/vendor.samsung.hardware.radio-V1-ndk.so \
+     device/samsung/x1q/s20volte_ims/system/lib64/vendor.samsung.hardware.radio.bridge-V1-ndk.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/vendor.samsung.hardware.radio.bridge-V1-ndk.so \
+     device/samsung/x1q/s20volte_ims/system/lib64/vendor.samsung.hardware.radio.bridge@2.0.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/vendor.samsung.hardware.radio.bridge@2.0.so \
+-    device/samsung/x1q/s20volte_ims/system/lib64/vendor.samsung.hardware.radio.bridge@2.1.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/vendor.samsung.hardware.radio.bridge@2.1.so \
+-    device/samsung/x1q/s20volte_ims/system/priv-app/imsservice/imsservice.apk:$(TARGET_COPY_OUT_SYSTEM)/priv-app/imsservice/imsservice.apk \
+-    device/samsung/x1q/s20volte_ims/system/product/overlay/S20VoLTEImsOverlay.apk:$(TARGET_COPY_OUT_PRODUCT)/overlay/S20VoLTEImsOverlay.apk \
++    device/samsung/x1q/s20volte_ims/system/lib64/vendor.samsung.hardware.radio.bridge@2.1.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/vendor.samsung.hardware.radio.bridge@2.1.so
++
++# Samsung IMS RRO (overrides com.android.phone: config_ims_mmtel_package and
++# config_ims_rcs_package -> com.sec.imsservice). Built/installed by
++# s20volte_ims/Android.mk into /product/overlay so the RRO scanner applies it.
++PRODUCT_PACKAGES += S20VoLTEImsOverlay
+diff --git a/s20volte_ims/system/etc/init/multiclientd.rc b/s20volte_ims/system/etc/init/multiclientd.rc
+index 68806aa..a61a7b9 100644
+--- a/s20volte_ims/system/etc/init/multiclientd.rc
++++ b/s20volte_ims/system/etc/init/multiclientd.rc
+@@ -1,11 +1,11 @@
+-service multiclient-daemon /system/bin/multiclientd -s ${ro.multisim.simslotcount}
++service multiclient-daemon /system/bin/multiclientd -s ${ro.vendor.multisim.simslotcount}
+     class main
+     disabled
+     user radio
+     group radio cache inet misc log readproc sdcard_rw
+ 
+-on property:ro.multisim.simslotcount=1 && property:ril.halservice.registered.slot1=true
++on property:ro.vendor.multisim.simslotcount=1 && property:ril.halservice.registered.slot1=true
+    start multiclient-daemon
+ 
+-on property:ro.multisim.simslotcount=2 && property:ril.halservice.registered.slot2=true
++on property:ro.vendor.multisim.simslotcount=2 && property:ril.halservice.registered.slot2=true
+    start multiclient-daemon

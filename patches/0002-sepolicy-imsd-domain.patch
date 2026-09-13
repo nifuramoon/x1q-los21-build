@@ -1,0 +1,42 @@
+diff --git a/private/file_contexts b/private/file_contexts
+index 63b3d1eff..0da7d046e 100644
+--- a/private/file_contexts
++++ b/private/file_contexts
+@@ -302,6 +302,8 @@
+ /system/bin/mediatuner	        u:object_r:mediatuner_exec:s0
+ /system/bin/mdnsd	u:object_r:mdnsd_exec:s0
+ /system/bin/installd	u:object_r:installd_exec:s0
++/system/bin/imsd	u:object_r:imsd_exec:s0
++/system/bin/multiclientd	u:object_r:multiclientd_exec:s0
+ /system/bin/otapreopt_chroot   u:object_r:otapreopt_chroot_exec:s0
+ /system/bin/otapreopt_slot   u:object_r:otapreopt_slot_exec:s0
+ /system/bin/credstore	u:object_r:credstore_exec:s0
+diff --git a/private/imsd.te b/private/imsd.te
+new file mode 100644
+index 000000000..5d332fb98
+--- /dev/null
++++ b/private/imsd.te
+@@ -0,0 +1,23 @@
++# S20 VoLTE (x1q): the Samsung IMS daemons are integrated into /system/bin, but
++# LineageOS' plat policy ships no domain for them. init therefore refuses to
++# start imsd.rc / multiclientd.rc:
++#
++#   init: File /system/bin/imsd (labeled "u:object_r:system_file:s0") has
++#   incorrect label or no domain transition from u:r:init:s0 ...
++#
++# Define permissive domains so the stock Samsung IMS stack runs natively,
++# without a Magisk module. The Magisk module solved this by running the daemons
++# in its unconfined domain; a permissive domain is the in-ROM equivalent.
++# Global SELinux stays ENFORCING (never `setenforce 0`; that trips Samsung RKP).
++
++type imsd, domain;
++type imsd_exec, exec_type, file_type, system_file_type;
++typeattribute imsd coredomain;
++init_daemon_domain(imsd)
++permissive imsd;
++
++type multiclientd, domain;
++type multiclientd_exec, exec_type, file_type, system_file_type;
++typeattribute multiclientd coredomain;
++init_daemon_domain(multiclientd)
++permissive multiclientd;
