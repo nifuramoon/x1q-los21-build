@@ -190,6 +190,31 @@ fastboot reboot
 - 現状: 安定化を確認。再発時は `SYSTEM_LAST_KMSG` / `/proc/reset_summary` を再取得して、
   スタックしたCPU/ドライバ（WiFi `dhd`、`i2c_pmic`、IMS `ISehRadioBridge` ポーリング等）を特定する。
 
+#### 7-c. 再起動の有力な再現条件: **USB(充電)を外すと数分で再起動**
+- 観察（ユーザ報告・再現性あり）:
+  - **USB接続（充電中）では数時間安定**。
+  - **USBを外す（バッテリー駆動）と数分で再起動**。
+- 裏付け: 充電中はサスペンドしない（`/sys/power/suspend_stats/success = 0`、dmesg に `PM: suspend` なし）。
+  → **バッテリー時に初めてサスペンド経路へ入り、そこでハング**している。
+- ハングの痕跡（`SYSTEM_LAST_KMSG` / pstore）:
+  - `rcu_preempt/rcu_sched kthread starved`（RCUストール）
+  - `qsee_rpmh: Srcs Busy / Retrying RPMH message Send`（RPMh=AP↔RPM電源管理がbusy）
+  - `vndbinder:... wait_for_shutdown_ack / sysmon_send_shutdown / mdm_subsys_shutdown`（モデム停止ACK待ちで固まる）
+  - `kworker ... ufshcd_gate_work → ufs_qcom_set_bus_vote → rpmh_write_batch`（UFSの電源遷移もRPMhで停止）
+  - `/proc/reset_summary`: `UPLOAD CAUSE = TZBSP_ERR_FATAL_NON_SECURE_WDT` / `SECURE_WATCHDOG | PMIC_RESIN`
+- つまり **サスペンド時の電源管理(RPMh)・モデム停止のハング → セキュアWDT → リセット**。
+  ソフト(ROM)より**カーネル/ファームウェア(電源管理・モデム)側**の要因。
+- 実施済みの緩和: モデム `restart_level` を `SYSTEM`→`RELATED`（`init.x1q.rc`、パッチ0009）。
+  ただし完全には止まらず（約2時間おきに再発）。
+- 次の候補（未検証）:
+  1. `dhd`(WiFi/Broadcom) の runtime-PM 無効化（ログで最も活発。PCIe/WiFiサスペンドハングの定番）。
+  2. UFS runtime-PM（`ufshcd_gate_work`）無効化。
+  3. モデム LPM/power-collapse 無効化、または `sysmon` 停止タイムアウト緩和。
+  4. QCOM watchdog の bite-time 延長（過渡ハングでのリセット回避。恒久ハング時はフリーズ化のトレードオフ）。
+  5. 切り分け: WiFi OFF / `s20volte_ims` OFF でバッテリー再起動が減るか。
+- 診断用: Magisk `rebootlog` モジュールを導入済み。毎起動で pstore・`reset_summary`・
+  `SYSTEM_LAST_KMSG`・永続logcat を `/data/local/tmp/rebootlogs/<ts>/` に保存する。
+
 ## メモ
 - 初回 `repo sync` は約 100GB / 数十分〜。
 - ビルドは 6 コア / 15GB RAM で **-j4 推奨**（-j6 は OOM）。swap を増やすと安定。
