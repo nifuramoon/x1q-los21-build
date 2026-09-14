@@ -29,6 +29,14 @@ x1q-los21-build/
 | 0001 | `kernel/samsung/sm8250` (`techpack/audio/asoc/kona.c`) | **スピーカー音声修正**。CS35L41 アンプをハードコードされたデバイス名 (`cs35l41-codec.0.auto`/`.4.auto`) ではなく **`of_node` で解決**。MFD の自動採番がオフセットし `.1.auto`/`.5.auto` になると `snd_soc_register_card` が失敗し、**サウンドカード自体が登録されない**（＝無音、かつ後述の再起動）のを防ぐ。 |
 | 0002 | `system/sepolicy` | **`imsd`/`multiclientd` ドメイン追加**（`type ...; type ..._exec, exec_type, file_type, system_file_type; typeattribute ... coredomain; init_daemon_domain(...); permissive ...;`）＋ `file_contexts`。ROM 直込みで IMS デーモンを init 起動できるようにする。 |
 | 0003 | `device/samsung/x1q` | **統合設定**: `s20volte_ims` の RRO を `/product/overlay` へ（`Android.mk`, `s20volte_ims.mk`）、`multiclientd.rc` のトリガを `ro.vendor.multisim.simslotcount` に修正、`WITH_SU:=true`（`BoardConfig.mk`, `lineage_x1q.mk`）。 |
+| 0004 | `device/samsung/sm8250-common` (`system.prop`) | **音量バグ修正**: `audio.offload.disable=1`。Samsung ベンダー HAL が**圧縮オフロード再生パスで音量ステップを適用しない**ため、オフロードを使うアプリ（デフォルトの音楽アプリ Eleven 等）が音量1でも爆音になっていた。全再生を Mixer(PCM) パスに通し、AOSP のソフト音量を効かせる。 |
+| 0005 | `device/samsung/x1q` (`gapps/`, `device.mk`) | **GApps の ROM 内蔵**: MindTheGapps 14.0 を prebuilt として `product`/`system_ext` に同梱（`PRODUCT_COPY_FILES`）。`product.img`/`system_ext.img` を焼き直しても GApps（Play ストア等）が消えず、特権権限（`MANAGE_USERS` 等）も allowlist ごと入るため Play ストアが落ちない。 |
+| 0006 | `build/make`, `vendor/lineage`, `device/samsung/x1q` | **GApps内蔵のためのビルドシステム変更**: ① `build/make/core/Makefile` に `BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES` で APK の `PRODUCT_COPY_FILES` を許可する分岐を追加、② `BoardConfig.mk` に APK/ELF の BROKEN フラグ、③ `vendor/lineage/config/common.mk` の `ro.control_privapp_permissions` を `enforce`→`log`（GApps が allowlist 外の特権権限を要求しても boot 失敗しないように）。 |
+| 0007 | `system/logging` (`logcat/logcatd.sh`) | **自発再起動のROM側恒久対策**: `logcatd` ラッパで `-n` 値が非数値（例 `32M`）なら既定 `256` に補正。`logd/README.property` が `.size` を “MB” と記載しているのに `logcatd.rc` が `-n`（回転ファイル数）へそのまま渡すため、`logcat: Invalid -n '32M'` で即終了 → init が updatable クラッシュと誤検知して再起動、を防ぐ。 |
+
+> GApps バイナリ（`device/samsung/x1q/gapps/system`, 約 630MB, 39 ファイル）はリポジトリに含めず、
+> MindTheGapps 14.0 モジュール（`/data/adb/modules/mindthegapps/system`）から
+> `adb pull` して配置する。詳細は下記「GApps の ROM 内蔵」を参照。
 
 ## ビルド手順
 
@@ -102,10 +110,64 @@ fastboot reboot
   実行する構成が確実）。ROM 直込みのみでは AIDL ラジオブリッジ等の世代差で不安定。
   → 詳細・モジュールは `scg01-los21-toolkit` を参照。
 
-### 4. その他
+### 4. 音量（1段で爆音）→ 解決
+- 症状: デフォルトの音楽アプリ（Eleven）で音量1でも爆音、段階変化なし。YouTube は正常。
+- 原因: Eleven は**圧縮オフロード再生パス**（`compressed_offload`, `AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD|DIRECT`）を使う。
+  Samsung ベンダー HAL はオフロード時に音量ステップを適用せず（`out_set_volume` は PCM で実質未対応）、
+  AOSP 側もオフロードではソフト音量を掛けないため、固定の大音量になる。YouTube は通常の Mixer(PCM) パスなので正常。
+- 対処: `audio.offload.disable=1`（パッチ0004）。全再生を Mixer パスに通し、AOSP のソフト音量を効かせる。
+  検証: Eleven 再生中の Mixer スレッドで step1=−53dB → step15=0dB の段階変化を確認。
+- 参考: デジタル出力自体は元々正常（step1=−64dB〜step15=−11dB）で、ソフト音量は機能していた。
+
+### 5. GApps の ROM 内蔵（Play ストアが落ちる問題）→ 解決
+- 症状: Play ストアが起動のたびにクラッシュ
+  （`SecurityException: You either need MANAGE_USERS or CREATE_USERS permission to: query users`）。
+- 原因: `product.img` を焼き直すと、実パーティション `/product` に入れていた MindTheGapps
+  （`Phonesky`/`GmsCore` 等）が消え、特権アプリ扱いされず `MANAGE_USERS` が付与されない。
+  控えの Magisk モジュール `mindthegapps` は `disable` されていた。
+- 対処: MindTheGapps 14.0 を prebuilt として `device/samsung/x1q/gapps/system` に取り込み、
+  `gapps.mk`（`PRODUCT_COPY_FILES`）で `product`/`system_ext` に同梱（パッチ0005）。
+  privapp-permissions allowlist も同梱されるため特権権限が付与される。
+  - `PRODUCT_COPY_FILES` は APK/ELF を拒否するため、`build/make/core/Makefile` に
+    `BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES` バイパスを追加し、`BoardConfig.mk` で
+    APK/ELF の BROKEN フラグを有効化（パッチ0006）。
+  - `ro.control_privapp_permissions` を `log` に変更（`vendor/lineage/config/common.mk`、パッチ0006）。
+- 手順（GApps バイナリの取り込み）:
+  ```bash
+  adb root
+  adb shell su -c 'cp -r /data/adb/modules/mindthegapps/system /data/local/tmp/mtg_system'
+  adb pull /data/local/tmp/mtg_system device/samsung/x1q/gapps/system
+  ```
+- 注意:
+  - ROM 内蔵後は Magisk モジュール `mindthegapps` を無効化（`touch /data/adb/modules/mindthegapps/disable`）して重複を避ける。
+  - フラッシュは `system`/`system_ext`/`product` のみ。`boot` は焼かない（Magisk root と `s20volte_ims` を維持）。
+    - 手順: `adb reboot fastboot` → `fastboot flash system/system_ext/product` → `fastboot reboot`
+  - 検証済み: `MANAGE_USERS: granted=true`、Play ストア起動クラッシュ0、`audio.offload.disable=1`、root 維持。
+
+### 6. その他
 - `persist.dbg.volte_avail_ovr=1` 等が必要。
 - `system_app` は permissive 運用（`sepolicy/vendor/system_app.te`）。
-- 音量バグ（1段で大音量）はベンダー HAL の `set_volume`/acdb 側の残課題。
+
+### 7. 自発再起動バグ → 解決（`logcatd` クラッシュ）
+- 症状: 数分おきに勝手に再起動。`persist.sys.boot.reason.history` に `reboot`（`shell`/`ota`/`recovery` 以外）。
+- 原因: `persist.logd.logpersistd.size` が **`32M`**（`/data/property/persistent_properties` に手動設定）で、
+  `logcatd` サービスの `-n ${logd.logpersistd.size}` に不正値（回転**ファイル数**）として渡され
+  `logcat: Invalid -n '32M'` で即終了（status 1）。init が「updatable プロセスが4分間に4回クラッシュ」と判断 →
+  `sys.init.updatable_crashing=1` → `flags_health_check UPDATABLE_CRASHING` → 再起動。
+- 診断:
+  ```bash
+  adb shell getprop sys.init.updatable_crashing            # 1
+  adb shell getprop sys.init.updatable_crashing_process_name  # logcatd
+  adb shell logcat -b all -d | grep -E 'logcatd.*exited|Invalid -n'
+  ```
+- 対処: `setprop persist.logd.logpersistd.size 16`（`-r 2048`KB × 16 ≒ 32MB の意図に合わせる。既定は `256` ファイル）。
+  persist プロパティのため再起動後も保持。`sys.init.updatable_crashing` は再起動でクリア。
+- 検証済み: 再起動後 5 分以上安定、`logcatd` クラッシュ 0、`sys.init.updatable_crashing` 未設定。
+- 備考: この値は ROM 既定（`logcatd.rc` の `:-256`）ではなく `/data` の persist 値が原因だったので、
+  ROM 側の変更は不要（factory reset でも既定に戻る）。
+- **ROM側の恒久対策（パッチ0007）**: `logcatd.sh` で `-n` の非数値値を `256` に補正。
+  これにより、誰がどのような不正値を `persist.logd.logpersistd.size` に入れても `logcatd` は落ちず、再起動しない。
+  （AOSPの `logd/README.property` が `.size` を “size in MB” と説明しているのが誤解の元。）
 
 ## メモ
 - 初回 `repo sync` は約 100GB / 数十分〜。

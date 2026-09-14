@@ -1,0 +1,16 @@
+diff --git a/system.prop b/system.prop
+index ba43e3c..95e9a65 100644
+--- a/system.prop
++++ b/system.prop
+@@ -15,3 +15,11 @@ ro.security.keystore.keytype=sakv2,gak,sgak
+ 
+ # OEM Unlock
+ ro.oem_unlock_supported=1
++
++# Audio: disable compressed offload.
++# The Samsung vendor audio HAL does not apply per-step stream volume on the
++# compressed-offload path, so media players that use offload (e.g. Eleven)
++# play at a fixed (loud) level regardless of the volume index. AOSP applies
++# stream volume in software on the normal mixer path, which works, so force
++# all playback through it.
++audio.offload.disable=1

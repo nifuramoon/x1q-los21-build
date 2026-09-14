@@ -1,0 +1,46 @@
+diff --git a/logcat/logcatd.sh b/logcat/logcatd.sh
+index 5a1415d1..cf268cdd 100755
+--- a/logcat/logcatd.sh
++++ b/logcat/logcatd.sh
+@@ -15,15 +15,37 @@ for arg in "$@"; do
+   fi
+ done
+ 
++# Sanitize arguments.
++#
++# logcat's -n takes the integer number of rotated files, but logcatd.rc passes
++# persist.logd.logpersistd.size verbatim, and that property is documented as a
++# size in MB (see logd/README.property). A value such as "32M" therefore makes
++# logcat exit immediately with status 1 ("Invalid -n '32M'"), which makes init
++# treat logcatd as a crash-looping updatable process and reboot the device.
++# Coerce a non-numeric -n value to the default (256) instead of crashing.
++sanitized=()
++expect_n="false"
++for arg in "$@"; do
++  if [ "$expect_n" == "true" ]; then
++    case "$arg" in
++      ''|*[!0-9]*) arg=256 ;;
++    esac
++    expect_n="false"
++  elif [ "$arg" == "-n" ]; then
++    expect_n="true"
++  fi
++  sanitized+=("$arg")
++done
++
+ if [ "$has_last" == "true" ]; then
+-  logcat "$@"
++  logcat "${sanitized[@]}"
+ fi
+ 
+ args_without_last=()
+-for arg in "$@"; do
++for arg in "${sanitized[@]}"; do
+   if [ "$arg" != "-L" -a "$arg" != "--last" ]; then
+-    ARGS+=("$arg")
++    args_without_last+=("$arg")
+   fi
+ done
+ 
+-exec logcat "${ARGS[@]}"
++exec logcat "${args_without_last[@]}"

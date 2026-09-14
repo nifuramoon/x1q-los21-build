@@ -1,0 +1,33 @@
+diff --git a/device.mk b/device.mk
+index f6f1b33..3cf9258 100644
+--- a/device.mk
++++ b/device.mk
+@@ -12,6 +12,9 @@ $(call inherit-product-if-exists, device/samsung/x1q/s20volte_ims/s20volte_ims.m
+ # NFC/eSE hardware fault fix (disable secure_element HAL + NFC features)
+ $(call inherit-product-if-exists, device/samsung/x1q/nfcsefix/nfcsefix.mk)
+ 
++# MindTheGapps integrated into the ROM (survives product.img flashes)
++$(call inherit-product, device/samsung/x1q/gapps/gapps.mk)
++
+ DEVICE_PATH := device/samsung/x1q
+ 
+ # AAPT
+diff --git a/gapps/gapps.mk b/gapps/gapps.mk
+new file mode 100644
+index 0000000..1e28ffe
+--- /dev/null
++++ b/gapps/gapps.mk
+@@ -0,0 +1,13 @@
++# MindTheGapps prebuilts integrated into the ROM.
++#
++# Copied from the MindTheGapps 14.0 systemless module so that the GApps end up
++# in the product/system_ext images and are not wiped when product.img is
++# flashed. Privileged permissions are provided by the copied
++# privapp-permissions-*.xml allowlists under product/etc/permissions and
++# system_ext/etc/permissions.
++
++PRODUCT_COPY_FILES += \
++    $(call find-copy-subdir-files,*,device/samsung/x1q/gapps/system/product,product)
++
++PRODUCT_COPY_FILES += \
++    $(call find-copy-subdir-files,*,device/samsung/x1q/gapps/system/system_ext,system_ext)

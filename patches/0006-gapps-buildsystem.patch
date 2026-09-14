@@ -1,0 +1,53 @@
+### repo: build/make (a/core/Makefile)
+diff --git a/core/Makefile b/core/Makefile
+index 849dac7074..dfad9d6542 100644
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -115,7 +115,7 @@ include $(BUILD_SYSTEM)/packaging/flags.mk
+ #$(2): the dest
+ define check-product-copy-files
+ $(if $(filter-out $(TARGET_COPY_OUT_SYSTEM_OTHER)/%,$(2)), \
+-  $(if $(filter %.apk, $(2)),$(error \
++  $(if $(and $(filter %.apk, $(2)),$(filter-out true,$(BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES))),$(error \
+      Prebuilt apk found in PRODUCT_COPY_FILES: $(1), use BUILD_PREBUILT instead!))) \
+ $(if $(filter true,$(BUILD_BROKEN_VINTF_PRODUCT_COPY_FILES)),, \
+   $(if $(filter $(TARGET_COPY_OUT_SYSTEM)/etc/vintf/% \
+
+### repo: vendor/lineage (a/config/common.mk)
+diff --git a/config/common.mk b/config/common.mk
+index 9bb749e4..bf4da7cd 100644
+--- a/config/common.mk
++++ b/config/common.mk
+@@ -86,8 +86,11 @@ PRODUCT_COPY_FILES += \
+     vendor/lineage/config/permissions/org.lineageos.android.xml:$(TARGET_COPY_OUT_PRODUCT)/etc/permissions/org.lineageos.android.xml
+ 
+ # Enforce privapp-permissions whitelist
++# NOTE: set to "log" (instead of "enforce") so that GApps (MindTheGapps), whose
++# apps may request signature|privileged permissions not present in the bundled
++# allowlists, do not abort system_server at boot.
+ PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
+-    ro.control_privapp_permissions=enforce
++    ro.control_privapp_permissions=log
+ 
+ ifneq ($(TARGET_DISABLE_LINEAGE_SDK), true)
+ # Lineage SDK
+
+### repo: device/samsung/x1q (a/BoardConfig.mk)
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index beb9b21..4f1ef1f 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -8,6 +8,13 @@ include device/samsung/sm8250-common/BoardConfigCommon.mk
+ 
+ DEVICE_PATH := device/samsung/x1q
+ 
++# Root (LineageOS built-in su / adb_root)
++WITH_SU := true
++
++# Allow copying GApps prebuilt APK/ELF files via PRODUCT_COPY_FILES (gapps/gapps.mk)
++BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES := true
++BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
++
+ # Camera
+ SOONG_CONFIG_samsungCameraVars += extra_ids
+ SOONG_CONFIG_samsungCameraVars_extra_ids := 52 # telephoto
