@@ -169,6 +169,27 @@ fastboot reboot
   これにより、誰がどのような不正値を `persist.logd.logpersistd.size` に入れても `logcatd` は落ちず、再起動しない。
   （AOSPの `logd/README.property` が `.size` を “size in MB” と説明しているのが誤解の元。）
 
+#### 7-b. もう一つの再起動要因: カーネルWDTバイト（RCUストール）
+- ROM内蔵GApps化＋フラッシュ直後の高負荷時に、`reboot` が **約2〜3分間隔**で連続発生。
+- `logcatd` 修正後も継続 → `SYSTEM_LAST_KMSG` に決定的ログ:
+  ```
+  rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:
+  rcu:     rcu_preempt kthread starved for 1140 jiffies!
+  rcu: INFO: rcu_sched detected stalls on CPUs/tasks:
+  rcu:     rcu_sched kthread starved for 1140 jiffies!
+  ```
+- `/proc/reset_summary`:
+  ```
+  UPLOAD CAUSE = 0xcafebabe = TZBSP_ERR_FATAL_NON_SECURE_WDT
+  GCC_RESET_STATUS = SECURE_WATCHDOG | PMIC_RESIN
+  ```
+- つまり **RCUストール（CPUがカーネル内で長時間張り付き）→ セキュアモニタ経由のWDTバイト → リセット**。
+  init の `updatable_crashing` とは別系統のカーネル要因。
+- 観察: フラッシュ直後（GApps/各種ドライバ初期化で load平均 8〜15）に多発し、load が 3 前後に落ち着くと
+  再起動が停止（15分以上安定、後に 35分以上安定）。過渡的な高負荷が引き金の可能性が高い。
+- 現状: 安定化を確認。再発時は `SYSTEM_LAST_KMSG` / `/proc/reset_summary` を再取得して、
+  スタックしたCPU/ドライバ（WiFi `dhd`、`i2c_pmic`、IMS `ISehRadioBridge` ポーリング等）を特定する。
+
 ## メモ
 - 初回 `repo sync` は約 100GB / 数十分〜。
 - ビルドは 6 コア / 15GB RAM で **-j4 推奨**（-j6 は OOM）。swap を増やすと安定。
