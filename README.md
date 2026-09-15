@@ -33,6 +33,8 @@ x1q-los21-build/
 | 0005 | `device/samsung/x1q` (`gapps/`, `device.mk`) | **GApps の ROM 内蔵**: MindTheGapps 14.0 を prebuilt として `product`/`system_ext` に同梱（`PRODUCT_COPY_FILES`）。`product.img`/`system_ext.img` を焼き直しても GApps（Play ストア等）が消えず、特権権限（`MANAGE_USERS` 等）も allowlist ごと入るため Play ストアが落ちない。 |
 | 0006 | `build/make`, `vendor/lineage`, `device/samsung/x1q` | **GApps内蔵のためのビルドシステム変更**: ① `build/make/core/Makefile` に `BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES` で APK の `PRODUCT_COPY_FILES` を許可する分岐を追加、② `BoardConfig.mk` に APK/ELF の BROKEN フラグ、③ `vendor/lineage/config/common.mk` の `ro.control_privapp_permissions` を `enforce`→`log`（GApps が allowlist 外の特権権限を要求しても boot 失敗しないように）。 |
 | 0007 | `system/logging` (`logcat/logcatd.sh`) | **自発再起動のROM側恒久対策**: `logcatd` ラッパで `-n` 値が非数値（例 `32M`）なら既定 `256` に補正。`logd/README.property` が `.size` を “MB” と記載しているのに `logcatd.rc` が `-n`（回転ファイル数）へそのまま渡すため、`logcat: Invalid -n '32M'` で即終了 → init が updatable クラッシュと誤検知して再起動、を防ぐ。 |
+| 0009 | `device/samsung/x1q` (`rootdir/etc/init.x1q.rc`) | **サスペンド再起動の緩和**: ① モデム `restart_level` を `SYSTEM`→`RELATED`（モデムSSRで端末全体を再起動しない）、② StrongBox(QTI keymaster@4.0-strongbox) を `stop`（TEEハング対策）。 |
+| 0010 | `kernel/samsung/sm8250` (`bcmdhd_101_16/dhd_pcie_linux.c`), `device/samsung/x1q` (`BoardConfig.mk`) | **サスペンド再起動のカーネル対策**: ① `pcie_aspm=off` をカーネルcmdlineに追加（WiFi Broadcom PCIe の ASPM L1 サスペンドハング回避）、② `dhd_runtimepm_state()` を無効化（WiFi PCIe の runtime-PM サスペンドを停止）。 |
 
 > GApps バイナリ（`device/samsung/x1q/gapps/system`, 約 630MB, 39 ファイル）はリポジトリに含めず、
 > MindTheGapps 14.0 モジュール（`/data/adb/modules/mindthegapps/system`）から
