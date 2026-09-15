@@ -280,6 +280,17 @@ fastboot reboot
 - **`i2c_pmic` probe 失敗 (-107)**: 起動時ログに出るが実害は不明。
 - **pstore の文字化け**: `console-ramoops` がビット化けすることがある（`strings` で読む）。
 
+### バッテリー / 負荷
+- CPU・ウェイクロックは通常アイドル（`system_server` ~7%、ユーザ空間wakelock 0）。
+- **永続ログ `logcatd` は消費源**（`-b all` を `/data/misc/logd` へ約1MB/分＝約1.4GB/日書き込み）。
+  - デバッグ用途のみ。不要なら無効化推奨（I/O・フラッシュ摩耗を削減）:
+    ```bash
+    adb shell 'su -c "setprop logd.logpersistd stop; setprop persist.logd.logpersistd \"\"; setprop logd.logpersistd.enable false"'
+    ```
+- ビルドが **userdebug** のためカーネル/フレームワークのログが多弁（`sec_bat`, `SDE`, `spcom` 等）。
+  user ビルドにすれば減るが root 等の制約がある。
+- 正確な放電レートは **バッテリー駆動で数時間後**に `dumpsys batterystats` で確認する（充電中は計測不可）。
+
 ---
 
 ## 8. 関連リポジトリ
