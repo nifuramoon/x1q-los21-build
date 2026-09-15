@@ -1,0 +1,55 @@
+diff --git a/drivers/bus/mhi/controllers/mhi_qcom.c b/drivers/bus/mhi/controllers/mhi_qcom.c
+index 75909694d117..331985fed5e4 100644
+--- a/drivers/bus/mhi/controllers/mhi_qcom.c
++++ b/drivers/bus/mhi/controllers/mhi_qcom.c
+@@ -316,6 +316,10 @@ static int mhi_runtime_resume(struct device *dev)
+ 
+ static int mhi_system_resume(struct device *dev)
+ {
++	struct mhi_controller *mhi_cntrl = dev_get_drvdata(dev);
++
++	device_wakeup_enable(&mhi_cntrl->mhi_dev->dev);
++
+ 	return mhi_runtime_resume(dev);
+ }
+ 
+@@ -325,6 +329,18 @@ int mhi_system_suspend(struct device *dev)
+ 	struct mhi_dev *mhi_dev = mhi_controller_get_devdata(mhi_cntrl);
+ 	int ret;
+ 
++	/*
++	 * The MHI device is registered as a wakeup source (mhi_init.c
++	 * device_init_wakeup(..., true)) and the modem raises
++	 * pm_wakeup_hard_event() on link events. If such an event is pending
++	 * at suspend time, pm_wakeup_pending() aborts the system suspend
++	 * ("Abort: Last active Wakeup Source: 0306_02.01.00"), dpm_suspend()
++	 * retries forever and the TrustZone secure watchdog eventually
++	 * reboots the device on screen-off. Disable the MHI wakeup across
++	 * system suspend so it can no longer abort it; re-enabled on resume.
++	 */
++	device_wakeup_disable(&mhi_cntrl->mhi_dev->dev);
++
+ 	MHI_LOG("Entered, pcidev usage_cnt: %d, pcidev runtime_auto: %d\n",
+ 			atomic_read(&mhi_dev->pci_dev->dev.power.usage_count),
+ 			mhi_dev->pci_dev->dev.power.runtime_auto);
+@@ -397,6 +413,20 @@ int mhi_system_suspend(struct device *dev)
+ exit_system_suspend:
+ 	mutex_unlock(&mhi_cntrl->pm_mutex);
+ 
++	if (ret) {
++		/*
++		 * Do not fail the whole system suspend if the MHI/modem PCIe
++		 * link could not be suspended. Returning an error here makes
++		 * dpm_suspend() abort and immediately retry the system suspend
++		 * (last_failed_dev=0002:01:00.0, last_failed_step=freeze), and
++		 * the endless retry eventually trips the TrustZone secure
++		 * watchdog, rebooting the device on screen-off / battery.
++		 * Keep the link powered on and report success instead.
++		 */
++		MHI_LOG("MHI suspend failed (ret:%d), keeping link on\n", ret);
++		ret = 0;
++	}
++
+ 	MHI_LOG("Exit with ret:%d\n", ret);
+ 
+ 	return ret;
