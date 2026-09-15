@@ -198,7 +198,34 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
 
 ---
 
-### 3.6 IMS / VoLTE / SMS（パッチ0002, 0003）
+### 3.6 サスペンド再起動（画面OFF / バッテリー）★最重要・継続調査
+
+- **症状**: **USBを外し（バッテリー）、電源ボタンで画面OFF（サスペンド）にすると数分で再起動**。再現性あり。
+- **重要な制約**: **USB接続中はサスペンドしない**。強制 `echo mem > /sys/power/state` しても
+  `a600000.ssusb: Abort PM suspend!! (USB is outside LPM)`（errno -16）で失敗する。
+  → **USBを物理的に外さないとサスペンド経路に入らない**ため、ADB接続中は再現・検証が難しい。
+  （WiFi ADB を張れば、外した後も監視は可能。）
+- **原因（判明分）**: サスペンド時のドライバ `.suspend` ハング。pstore/lastkmsg に
+  `spi_geni_suspend`（SPI: タッチ/ハプティクス）, `msm_pcie_drv_suspend`(PCIe RC0/RC2),
+  `dhdpcie_*`（Broadcom WiFi）, `qsee_rpmh: Srcs Busy` 等。
+  WiFi の D3 ハンドシェイク（`dhdpcie_set_suspend_resume`）が ACK 待ちで固まると RPMh ごと停止し、
+  セキュアWDT（`TZBSP_ERR_FATAL_NON_SECURE_WDT`）でリセット。
+- **対処（カーネル, パッチ0010/0012）**:
+  - `pcie_aspm=off`（cmdline）
+  - `dhd_runtimepm_state()` no-op（runtime-PM）
+  - `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` no-op（**システムサスペンド時にWiFi PCIeを触らない**）
+- **検証方法（重要）**:
+  1. WiFi ADB を張る（`adb tcpip 5555` → `adb connect <ip>:5555`）。
+  2. `su -c "echo mem > /sys/power/state"` は**USB接続中は失敗する**ので、
+     実際にUSBを外して画面OFFにする。
+  3. 再起動したら `SYSTEM_LAST_KMSG` / `/proc/reset_summary` / `rebootlog` を回収。
+  4. `cat /sys/power/suspend_stats/last_failed_dev` でサスペンドを拒否/失敗させたデバイスを確認。
+- **残候補（未検証）**: SPI(`spi_geni`)/タッチ(`sec_ts`)/ハプティクス(`cs40l2x`) の suspend no-op、
+  ディスプレイ/DP suspend、watchdog bite-time 延長。
+- **注意**: 現状は「USB接続中は安定、バッテリー+画面OFFで稀に再起動」のレベル。
+  daily driver として致命的ではないが、完全解決にはカーネルのサスペンド経路の特定が必要。
+
+### 3.7 IMS / VoLTE / SMS（パッチ0002, 0003）
 
 - AOSP(LOS21) に Samsung 独自 IMS (`com.sec.imsservice`) を載せるため、
   - **RRO**（`S20VoLTEImsOverlay.apk`）を `/product/overlay` に配置

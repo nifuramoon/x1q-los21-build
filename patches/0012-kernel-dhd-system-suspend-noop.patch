@@ -1,0 +1,41 @@
+diff --git a/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c b/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
+index acf1af81df90..7676a4a09289 100644
+--- a/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
++++ b/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
+@@ -647,6 +647,12 @@ static int dhdpcie_pm_suspend(struct device *dev)
+ 	dhd_bus_t *bus = NULL;
+ 	unsigned long flags;
+ 
++	/* Keep the Broadcom WiFi PCIe in D0 across system suspend.
++	 * The D3 (H2D_HOST_D3_INFORM) handshake in dhdpcie_set_suspend_resume()
++	 * hangs when the dongle does not ACK, stalling the whole system suspend
++	 * and tripping the secure watchdog (reboot on screen-off / battery). */
++	return ret;
++
+ 	if (pch) {
+ 		bus = pch->bus;
+ 	}
+@@ -970,6 +976,10 @@ static int dhdpcie_pm_system_suspend_noirq(struct device * dev)
+ 	dhd_bus_t *bus = NULL;
+ 	int ret;
+ 
++	/* See dhdpcie_pm_suspend(): skip the WiFi D3 handshake on system suspend
++	 * so a non-ACKing dongle cannot stall suspend and reboot the device. */
++	return 0;
++
+ 	DHD_RPM(("%s Enter\n", __FUNCTION__));
+ 
+ 	if (!pch)
+@@ -2954,6 +2964,12 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
+ 	uint64 curr_time_ns;
+ #endif /* DHD_KERNEL_SCHED_DEBUG && DHD_FW_COREDUMP */
+ 
++	/* Disable the Broadcom WiFi PCIe runtime-PM suspend.
++	 * On battery / screen-off the ASPM L1 suspend path
++	 * (dhdpcie_set_suspend_resume) hangs and stalls the RPMh, which trips the
++	 * secure watchdog and reboots the device. Keep the WiFi PCIe awake. */
++	return FALSE;
++
+ 	bus = dhd->bus;
+ 
+ 	DHD_GENERAL_LOCK(dhd, flags);
