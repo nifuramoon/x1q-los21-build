@@ -1,0 +1,16 @@
+diff --git a/wifi/aidl/default/wifi_legacy_hal.cpp b/wifi/aidl/default/wifi_legacy_hal.cpp
+index 55d6f59314..cd8e4c5efb 100644
+--- a/wifi/aidl/default/wifi_legacy_hal.cpp
++++ b/wifi/aidl/default/wifi_legacy_hal.cpp
+@@ -174,7 +174,10 @@ std::function<void(const char*)> on_subsystem_restart_internal_callback;
+ void onAsyncSubsystemRestart(const char* error) {
+     const auto lock = aidl_sync_util::acquireGlobalLock();
+     if (on_subsystem_restart_internal_callback) {
+-        on_subsystem_restart_internal_callback(error);
++        // The Broadcom legacy HAL can report a subsystem restart with a null
++        // error string; passing it through crashes the handler in __strlen
++        // (and takes down wifi-service / the camera provider). Coerce to "".
++        on_subsystem_restart_internal_callback(error != nullptr ? error : "");
+     }
+ }
+ 

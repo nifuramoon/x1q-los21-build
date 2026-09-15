@@ -3,6 +3,10 @@
 Samsung Galaxy S20 5G Snapdragon (x1q / SCG01 / SM-G981N) 向けに
 LineageOS 21 (Android 14) をビルドするための設定・パッチ置き場。
 
+> **📖 完全ガイド（引き継ぎ用リファレンス）: [`docs/COMPLETE-GUIDE.md`](docs/COMPLETE-GUIDE.md)**
+> 端末情報・全パッチ・再起動/音量/GApps/カメラ等の原因と対策・診断ツール・
+> Magisk維持でのboot更新手順まで、次の担当者が単体で理解できる形でまとめています。
+
 ## 構成
 
 ```
@@ -35,6 +39,7 @@ x1q-los21-build/
 | 0007 | `system/logging` (`logcat/logcatd.sh`) | **自発再起動のROM側恒久対策**: `logcatd` ラッパで `-n` 値が非数値（例 `32M`）なら既定 `256` に補正。`logd/README.property` が `.size` を “MB” と記載しているのに `logcatd.rc` が `-n`（回転ファイル数）へそのまま渡すため、`logcat: Invalid -n '32M'` で即終了 → init が updatable クラッシュと誤検知して再起動、を防ぐ。 |
 | 0009 | `device/samsung/x1q` (`rootdir/etc/init.x1q.rc`) | **サスペンド再起動の緩和**: ① モデム `restart_level` を `SYSTEM`→`RELATED`（モデムSSRで端末全体を再起動しない）、② StrongBox(QTI keymaster@4.0-strongbox) を `stop`（TEEハング対策）。 |
 | 0010 | `kernel/samsung/sm8250` (`bcmdhd_101_16/dhd_pcie_linux.c`), `device/samsung/x1q` (`BoardConfig.mk`) | **サスペンド再起動のカーネル対策**: ① `pcie_aspm=off` をカーネルcmdlineに追加（WiFi Broadcom PCIe の ASPM L1 サスペンドハング回避）、② `dhd_runtimepm_state()` を無効化（WiFi PCIe の runtime-PM サスペンドを停止）。 |
+| 0011 | `hardware/interfaces/wifi` (`aidl/default/wifi_legacy_hal.cpp`) | **カメラ「セッションエラー」の修正**: WiFi HAL が WiFiサブシステム再起動通知の **null 文字列**で `__strlen` クラッシュ → カメラプロバイダも巻き添え再起動していた。`onAsyncSubsystemRestart` に null ガード（`error ? error : ""`）を追加。 |
 
 > GApps バイナリ（`device/samsung/x1q/gapps/system`, 約 630MB, 39 ファイル）はリポジトリに含めず、
 > MindTheGapps 14.0 モジュール（`/data/adb/modules/mindthegapps/system`）から
