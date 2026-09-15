@@ -1,0 +1,20 @@
+diff --git a/drivers/spi/spi-geni-qcom.c b/drivers/spi/spi-geni-qcom.c
+index a7718d956a7b..29bcc99d4499 100644
+--- a/drivers/spi/spi-geni-qcom.c
++++ b/drivers/spi/spi-geni-qcom.c
+@@ -1937,11 +1937,13 @@ static int spi_geni_suspend(struct device *dev)
+ 	struct spi_master *spi = get_spi_master(dev);
+ 	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
+ 
++	/* Do not abort system suspend with -EBUSY if the SPI controller is not
++	 * runtime-suspended (e.g. the Samsung touchscreen keeps it busy). A
++	 * failed system suspend is retried and eventually trips the TrustZone
++	 * watchdog, rebooting the device on screen-off / battery. */
+ 	if (!pm_runtime_status_suspended(dev)) {
+ 		GENI_SE_ERR(geni_mas->ipc, true, dev,
+ 			":%s: runtime PM is active\n", __func__);
+-		ret = -EBUSY;
+-		return ret;
+ 	}
+ 
+ 	GENI_SE_ERR(geni_mas->ipc, true, dev, ":%s: End\n", __func__);
