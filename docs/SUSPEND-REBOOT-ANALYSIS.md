@@ -44,6 +44,15 @@ x1q (SCG01 / LineageOS 21) の自発再起動について、原因・証拠・�
   出ていた（modem 側の異常も併発）。
 - `sec_debug_user_reset`（Samsung の user reset 経路）と `ap_health_work_write_fn`（AP health）が記録。
 
+### 各ブートの最期（共通パターン）
+```
+last active wakeup source: eventpoll   /  DIAG_WS   /  mmc0_detect
+PM: suspend entry                       ← 直後にハング（userspaceロガーはfreezeで停止）
+→ TZ SECURE_WATCHDOG / AOP クラッシュでリセット
+```
+特に **`DIAG_WS`**（モデム DIAG インタフェースの wakeup source）が残るケースが複数。
+多数の wakeup source が常時 active のままサスペンド入りし、定着せずリセットしている疑い。
+
 ### サスペンドチャーン（別レイヤの問題、0018〜0021で対処済み）
 ```
 PM: suspend entry / PM: suspend exit の連続
