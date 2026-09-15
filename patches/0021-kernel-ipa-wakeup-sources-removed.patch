@@ -1,0 +1,64 @@
+diff --git a/drivers/platform/msm/ipa/ipa_v3/ipa.c b/drivers/platform/msm/ipa/ipa_v3/ipa.c
+index e37afdf96857..88d0e6501f9c 100644
+--- a/drivers/platform/msm/ipa/ipa_v3/ipa.c
++++ b/drivers/platform/msm/ipa/ipa_v3/ipa.c
+@@ -7106,14 +7106,16 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
+ 		goto fail_device_create;
+ 	}
+ 
+-	/* Register a wakeup source. */
+-	ipa3_ctx->w_lock =
+-		wakeup_source_register(&ipa_pdev->dev, "IPA_WS");
+-	if (!ipa3_ctx->w_lock) {
+-		IPAERR("IPA wakeup source register failed\n");
+-		result = -ENOMEM;
+-		goto fail_w_source_register;
+-	}
++	/*
++	 * Do not register the IPA wakeup source. If it is held active at
++	 * suspend time, pm_wakeup_pending() aborts the system suspend
++	 * ("Abort: Pending Wakeup Sources: IPA_CLIENT_APPS_LAN_CONS IPA_WS"),
++	 * dpm_suspend() retries forever and the TrustZone secure watchdog
++	 * eventually reboots the device on screen-off. __pm_stay_awake() and
++	 * __pm_relax() are NULL-safe, so keeping w_lock NULL is fine; the IPA
++	 * just no longer keeps the AP awake by itself.
++	 */
++	ipa3_ctx->w_lock = NULL;
+ 	spin_lock_init(&ipa3_ctx->wakelock_ref_cnt.spinlock);
+ 
+ 	/* Initialize Power Management framework */
+@@ -7208,7 +7210,6 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
+ fail_ipa_pm_init:
+ 	wakeup_source_unregister(ipa3_ctx->w_lock);
+ 	ipa3_ctx->w_lock = NULL;
+-fail_w_source_register:
+ 	device_destroy(ipa3_ctx->cdev.class, ipa3_ctx->cdev.dev_num);
+ fail_device_create:
+ 	unregister_chrdev_region(ipa3_ctx->cdev.dev_num, 1);
+diff --git a/drivers/platform/msm/ipa/ipa_v3/ipa_pm.c b/drivers/platform/msm/ipa/ipa_v3/ipa_pm.c
+index efd3e16123e7..dc4fb06bf6e5 100644
+--- a/drivers/platform/msm/ipa/ipa_v3/ipa_pm.c
++++ b/drivers/platform/msm/ipa/ipa_v3/ipa_pm.c
+@@ -762,13 +762,15 @@ int ipa_pm_register(struct ipa_pm_register_params *params, u32 *hdl)
+ 	client->group = params->group;
+ 	client->hdl = *hdl;
+ 	client->skip_clk_vote = params->skip_clk_vote;
+-	client->wlock = wakeup_source_register(NULL, client->name);
+-	if (!client->wlock) {
+-		ipa_pm_deregister(*hdl);
+-		IPA_PM_ERR("IPA wakeup source register failed %s\n",
+-			   client->name);
+-		return -ENOMEM;
+-	}
++	/*
++	 * Do not register a per-client wakeup source. A client kept active at
++	 * suspend time otherwise aborts the system suspend
++	 * ("Abort: Pending Wakeup Sources: IPA_CLIENT_APPS_LAN_CONS IPA_WS"),
++	 * which is retried until the TrustZone secure watchdog reboots the
++	 * device. __pm_stay_awake()/__pm_relax() are NULL-safe, so a NULL
++	 * wlock is fine.
++	 */
++	client->wlock = NULL;
+ 	init_completion(&client->complete);
+ 
+ 	/* add client to exception list */
