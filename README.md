@@ -40,6 +40,16 @@ x1q-los21-build/
 | 0009 | `device/samsung/x1q` (`rootdir/etc/init.x1q.rc`) | **サスペンド再起動の緩和**: ① モデム `restart_level` を `SYSTEM`→`RELATED`（モデムSSRで端末全体を再起動しない）、② StrongBox(QTI keymaster@4.0-strongbox) を `stop`（TEEハング対策）。 |
 | 0010 | `kernel/samsung/sm8250` (`bcmdhd_101_16/dhd_pcie_linux.c`), `device/samsung/x1q` (`BoardConfig.mk`) | **サスペンド再起動のカーネル対策**: ① `pcie_aspm=off` をカーネルcmdlineに追加（WiFi Broadcom PCIe の ASPM L1 サスペンドハング回避）、② `dhd_runtimepm_state()` を無効化（WiFi PCIe の runtime-PM サスペンドを停止）。 |
 | 0011 | `hardware/interfaces/wifi` (`aidl/default/wifi_legacy_hal.cpp`) | **カメラ「セッションエラー」の修正**: WiFi HAL が WiFiサブシステム再起動通知の **null 文字列**で `__strlen` クラッシュ → カメラプロバイダも巻き添え再起動していた。`onAsyncSubsystemRestart` に null ガード（`error ? error : ""`）を追加。 |
+| 0012 | `kernel/samsung/sm8250` (`bcmdhd_101_16/dhd_pcie_linux.c`) | サスペンド再起動の緩和: `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` を no-op（システムサスペンド時に WiFi PCIe を触らない）。 |
+| 0013 | `kernel/samsung/sm8250` (`drivers/motor/cs40l2x.c`) | サスペンド再起動の緩和: `cs40l2x_suspend()` を no-op（ハプティクスの hibernate I2C が -107 で失敗/ハング）。 |
+| 0014 | `device/samsung/x1q` (`rootdir/etc/init.x1q.rc`) | サスペンド再起動の緩和: 全 PCIe デバイスを `power/control=on`（runtime-PM 無効）に。 |
+| 0015 | `kernel/samsung/sm8250` (`arch/arm64/boot/dts/vendor/qcom/kona.dtsi`) | サスペンド再起動の緩和: AP watchdog の `qcom,bark-time` を `11000`→`30000`。ただしリセットは TZ 側 `SECURE_WATCHDOG` なので決定打ではない。 |
+| 0016 | `kernel/samsung/sm8250` (`drivers/pci/controller/pci-msm.c`) | サスペンド再起動の緩和: `msm_pcie_drv_suspend()` を no-op（TZ への PCIe 停止 rpmsg 依頼で固まるのを回避）。 |
+| 0017 | `kernel/samsung/sm8250` (`drivers/pci/controller/pci-msm.c`) | サスペンド再起動の緩和: `msm_pcie_pm_suspend()` を no-op（PCIe RC0/RC2 のリンクサスペンドを回避）。 |
+| 0018 | `kernel/samsung/sm8250` (`drivers/spi/spi-geni-qcom.c`) | サスペンド再起動: `spi_geni_suspend()` が runtime-PM 非停止時に **`-EBUSY` でシステムサスペンドを中断**していたのを撤廃。 |
+| 0019 | `kernel/samsung/sm8250` (`drivers/bus/mhi/controllers/mhi_qcom.c`) | サスペンド再起動: `mhi_system_suspend()` がリンクサスペンド失敗時に**エラーを返してシステムサスペンド全体を中断**していたのを止め、リンクONのまま成功扱い。 |
+| 0020 | `kernel/samsung/sm8250` (`drivers/bus/mhi/controllers/mhi_qcom.c`) | **サスペンド再起動の真因対策**: サスペンド中に **MHI の wakeup source を無効化**（`device_wakeup_disable`／resume で復帰）。MHI が pending wakeup となり `Abort: Last active Wakeup Source: 0306_02.01.00` でサスペンド中断→TZ WDT 再起動していた。 |
+| 0021 | `kernel/samsung/sm8250` (`drivers/platform/msm/ipa/ipa_v3/ipa.c`, `ipa_pm.c`) | **サスペンド再起動の最終対策（解決）**: **IPA の wakeup source（`IPA_WS` / クライアント wlock）を登録しない**。`Abort: Pending Wakeup Sources: IPA_CLIENT_APPS_LAN_CONS IPA_WS` でサスペンド中断→TZ WDT 再起動していた。`__pm_stay_awake`/`__pm_relax` は NULL 安全なので機能は維持。**これで画面OFF・バッテリー放置でも再起動しなくなった。** |
 
 > GApps バイナリ（`device/samsung/x1q/gapps/system`, 約 630MB, 39 ファイル）はリポジトリに含めず、
 > MindTheGapps 14.0 モジュール（`/data/adb/modules/mindthegapps/system`）から

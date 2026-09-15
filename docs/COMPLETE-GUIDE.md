@@ -10,7 +10,7 @@
 
 - 端末: **Samsung Galaxy S20 5G au `SCG01` / codename `x1q` / SoC SM8250 (kona)**。
 - 目標: LOS21 (Android 14 / SDK34) を実用的な daily driver にする（音声・VoLTE/SMS・NFC・音量・GApps・安定性）。
-- 本リポジトリは **ROM 側に取り込んだ修正（パッチ0001〜0010）** とビルド手順を管理する。
+- 本リポジトリは **ROM 側に取り込んだ修正（パッチ0001〜0021）** とビルド手順を管理する。
 - VoLTE 通話のみ **Magisk モジュール `s20volte_ims`** が現状最も確実（→ `nifuramoon/scg01-los21-toolkit`）。
 - 主要な落とし穴は「**HAL / ベンダーブロブ / カーネル**」側に集中している。ROM 設定だけでは直らないものも多い。
 
@@ -51,7 +51,7 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
 
 ---
 
-## 2. パッチ一覧（0001〜0010）
+## 2. パッチ一覧（0001〜0021）
 
 | # | 対象 | 内容 |
 |---|---|---|
@@ -205,30 +205,44 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
   `a600000.ssusb: Abort PM suspend!! (USB is outside LPM)`（errno -16）で失敗する。
   → **USBを物理的に外さないとサスペンド経路に入らない**ため、ADB接続中は再現・検証が難しい。
   （WiFi ADB を張れば、外した後も監視は可能。）
-- **原因（判明分）**: サスペンド時のドライバ `.suspend` ハング。pstore/lastkmsg に
-  `spi_geni_suspend`（SPI: タッチ/ハプティクス）, `msm_pcie_drv_suspend`(PCIe RC0/RC2),
-  `dhdpcie_*`（Broadcom WiFi）, `qsee_rpmh: Srcs Busy` 等。
-  WiFi の D3 ハンドシェイク（`dhdpcie_set_suspend_resume`）が ACK 待ちで固まると RPMh ごと停止し、
-  セキュアWDT（`TZBSP_ERR_FATAL_NON_SECURE_WDT`）でリセット。
-- **対処（カーネル, パッチ0010/0012/0013）**:
-  - `pcie_aspm=off`（cmdline）
-  - `dhd_runtimepm_state()` no-op（runtime-PM）
-  - `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` no-op（システムサスペンド時にWiFi PCIeを触らない）
-  - `cs40l2x_suspend()` no-op（ハプティクスのhibernate I2Cが-107で失敗/ハング）
-  - **効果**: サスペンドが連続5回成功（以前は数回で再起動）。完全ではない。
-- **対処（追記, パッチ0014）**: 全PCIeデバイスを `power/control=on`（runtime-PM無効）に。
-  `0000:00:00.0` / `0000:01:00.0`(WiFi) / `0002:00:00.0` / `0002:01:00.0`。
-- **対処（パッチ0015）**: AP watchdog の `qcom,bark-time` を `11000`→`30000`（30秒）に延長
-  （`kona.dtsi`）。ただしリセットは **TZ側 `SECURE_WATCHDOG`** なのでこれだけでは不十分と判明。
-- **対処（パッチ0016）**: `msm_pcie_drv_suspend` を no-op（`pci-msm.c`）。これは rpmsg で
-  **セキュア側(TZ)にPCIe停止を依頼**する箇所で、応答が無いとサスペンド全体が固まりTZ WDTが発火する。
-- **残る容疑**: `spss`(SP) のサスペンド、タッチ `sec_ts`/`spi_geni` の suspend。
-- **改善度**: 0010+0012+0013+0014+0015 で **サスペンド15回連続・再起動ゼロ**（failは数回あるが
-  アボートするだけで再起動しない）。以前は数回で再起動していたので、実用上は解決。
-- **残るハング要因（判明）**: `spdaemon: spss_utils [spss_wait_for_event]: Wait for event [1] timeout [60] sec expired`
-  → **Samsung センサープロセッサ(`spss`)がサスペンド中に60秒タイムアウト**。`spcom` に suspend フックは無い。
-  `spi_geni`(SPI)・`sec_ts`(タッチ)・`msm_pcie_drv_suspend RC2` もログに残る。次は `spss`/`slpi`/`adsp` の
-  サスペンド経路、SPI/タッチの suspend no-op を疑う。
+- **★真因（確定）**: ハングではなく、**「pending wakeup source によるサスペンド中断ループ」**。
+  - `dpm_suspend()` が `-EBUSY` を返し、PM core が即再試行 → 延々とリトライ →
+    **TZ側 `SECURE_WATCHDOG`** が発火してリセット。
+  - 決め手はランタイムの `pm_debug_messages` と `/sys/power/suspend_stats`:
+    ```
+    cat /sys/power/suspend_stats/fail            # 8
+    cat /sys/power/suspend_stats/success         # 30
+    cat /sys/power/suspend_stats/last_failed_dev # 0002:01:00.0  (モデムMHI on PCIe RC2)
+    cat /sys/power/suspend_stats/last_failed_step# freeze
+    ```
+    kmsg/pstore:
+    ```
+    PM: Some devices failed to suspend, or early wake event detected
+    Abort: Last active Wakeup Source: 0306_02.01.00   ← MHI (dev_id 0306, BDF 0002:01:00.0)
+    ...（0020後）...
+    Abort: Pending Wakeup Sources: IPA_CLIENT_APPS_LAN_CONS IPA_WS
+    ```
+  - つまり Samsung スタックの **MHI（モデム）と IPA（データパス）が wakeup source を
+    active のまま保持**しており、それが `pm_wakeup_pending()` を真にしてサスペンドを毎回中断させていた。
+- **診断の作り方（再発時に必須）**:
+  - `echo 1 > /sys/power/pm_debug_messages`（デバイス毎の suspend 成否が出る）
+  - `klogcap` Magisk モジュール（`/dev/kmsg`＋`logcat` を持続保存）＋ pstore。
+    ※ userspace の `/dev/kmsg` リーダは **freezer で凍る**ため、`PM: suspend entry` 以降は
+    カーネル側（pstore／`suspend_stats`）でしか追えない。
+- **対処（最終, パッチ0018〜0021）**:
+  - **0018**: `spi_geni_suspend` が runtime-PM 非停止時に **`-EBUSY` でシステムサスペンドを中断**していたのを撤廃。
+  - **0019**: `mhi_system_suspend` がリンクサスペンド失敗時に**エラーを返して全体を中断**していたのを止め、リンクONのまま成功扱い。
+  - **0020**: サスペンド中の **MHI wakeup source を無効化**（`device_wakeup_disable`／resumeで戻す）。
+  - **0021**: **IPA の wakeup source（`IPA_WS` / クライアントwlock）を登録しない**。
+    `__pm_stay_awake`/`__pm_relax` は NULL 安全なので機能は維持。
+  - **結果**: 画面OFF・バッテリー放置で**再起動しなくなった**（ユーザー確認）。
+- **旧・周辺対処（0010/0012/0013/0014/0015/0016/0017）**: `pcie_aspm=off`, WiFi `dhd` runtime-PM／
+  system-noirq no-op, `cs40l2x_suspend` no-op, 全PCIe `power/control=on`, AP watchdog `bark-time` 延長,
+  `msm_pcie_drv_suspend`/`msm_pcie_pm_suspend` no-op。頻度は減らしたが**真因ではなかった**（wakeup source が本命）。
+- **教訓**: 「サスペンドで再起動」= ドライバのハングと思い込みがちだが、実際は
+  **`/sys/power/suspend_stats` の `last_failed_dev`/`last_failed_step` と
+  `pm_debug_messages` の `Abort: ... Wakeup Source` を見るのが最短**。ここを見ずに
+  ドライバを no-op しても解決しない。
 - **検証方法（重要）**:
   1. WiFi ADB を張る（`adb tcpip 5555` → `adb connect <ip>:5555`）。
   2. **USB接続中はサスペンドできない**（`a600000.ssusb: Abort PM suspend / USB outside LPM`）。
@@ -237,10 +251,12 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
   3. `su -c "echo +15 > /sys/class/rtc/rtc0/wakealarm; echo mem > /sys/power/state"` を繰り返す。
   4. `cat /sys/power/suspend_stats/{success,fail,last_failed_dev}` で確認。
   5. 再起動したら `SYSTEM_LAST_KMSG` / `/proc/reset_summary` / `rebootlog` を回収。
-- **残候補（未検証）**: `spss`/`slpi`/`adsp` のサスペンド回避、SPI(`spi_geni`)/タッチ(`sec_ts`) suspend no-op、
-  ディスプレイ/DP suspend、watchdog bite-time 延長。
-- **注意**: 現状は「USB接続中は安定、バッテリー+画面OFFで稀に再起動」のレベル。
-  daily driver として致命的ではないが、完全解決にはカーネルのサスペンド経路の特定が必要。
+- **状態（解決済み）**: パッチ0018〜0021 で**画面OFF・バッテリー放置でも再起動しない**ことを確認。
+  USB接続中は元々サスペンドしない（仕様）なので、検証は必ずUSBを物理的に外して行う。
+- **もし将来また再発したら**: まず `suspend_stats` の `last_failed_dev`/`last_failed_step` と
+  `pm_debug_messages` の `Abort: ... Wakeup Source(s): ...` を読む。
+  出てきた wakeup source を持つドライバを特定し、サスペンド中の `device_wakeup_disable` か
+  wakeup source 非登録で潰す（MHI=0020, IPA=0021 と同じ手順）。
 
 ### 3.7 IMS / VoLTE / SMS（パッチ0002, 0003）
 
@@ -268,6 +284,7 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
 | `playintegrityfix` | Play Integrity 対策 |
 | `interceptmode` | HTTPS 傍受（proxy + frida-server + CA。ON/OFF トグル） |
 | `rebootlog` | 毎起動で pstore/reset_summary/LAST_KMSG/永続logcat を `/data/local/tmp/rebootlogs/` に保全（診断用） |
+| `klogcap` | `/dev/kmsg`＋`logcat` を `/data/local/tmp/klogcap/<ts>/` へ常時保存。`pm_debug_messages` も起動時にON。サスペンド再起動の真因特定に決定的だった（本リポジトリの `patches/` 外・端末側） |
 | `suspendfix` | （実験用・無効化済み）UFS `rpm_lvl/spm_lvl` 調整 |
 
 ---
