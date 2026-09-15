@@ -1,0 +1,35 @@
+diff --git a/rootdir/etc/init.x1q.rc b/rootdir/etc/init.x1q.rc
+index 533f68d..5439d95 100644
+--- a/rootdir/etc/init.x1q.rc
++++ b/rootdir/etc/init.x1q.rc
+@@ -109,6 +109,30 @@ on property:ro.boot.carrierid=VZW
+     setprop ssu.support 1
+ 
+ on boot
++# Modem (esoc0/mdm0) subsystem restart level.
++# Default SYSTEM means a modem subsystem restart (SSR) reboots the whole device,
++# and that shutdown hangs waiting for the modem (sysmon_send_shutdown) while RPMh
++# also stalls, tripping the kernel/secure watchdog. Use RELATED so only the modem
++# restarts instead of the entire system.
++    write /sys/devices/platform/soc/soc:qcom,mdm0/subsys9/restart_level RELATED
++
++# StrongBox (QTI keymaster@4.0-strongbox) hangs in the TEE: keystore2 reports its
++# generateKey() op pending for 20+ minutes and spams watchdog logs, stressing the
++# system. The stock /vendor rc is copied after ours so we cannot override it via
++# PRODUCT_COPY_FILES; stop the service here instead so keystore2 falls back to the
++# TEE keymaster.
++    stop keymaster-sb-4-0
++
++# PCIe: keep all PCIe devices (Broadcom WiFi on RC0, Qualcomm device on RC2)
++# out of runtime-PM. Their suspend transitions (msm_pcie_drv_suspend) have been
++# observed to hang and stall the system suspend -> secure watchdog reboot on
++# screen-off / battery.
++    write /sys/bus/pci/devices/0000:00:00.0/power/control on
++    write /sys/bus/pci/devices/0000:01:00.0/power/control on
++    write /sys/bus/pci/devices/0002:00:00.0/power/control on
++    write /sys/bus/pci/devices/0002:01:00.0/power/control on
++
++
+ # SDHMS Slowdown : Cpuset
+     mkdir /dev/cpuset/abnormal
+     write /dev/cpuset/abnormal/cpus 0-3

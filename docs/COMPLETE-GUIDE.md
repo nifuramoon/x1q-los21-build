@@ -216,9 +216,14 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
   - `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` no-op（システムサスペンド時にWiFi PCIeを触らない）
   - `cs40l2x_suspend()` no-op（ハプティクスのhibernate I2Cが-107で失敗/ハング）
   - **効果**: サスペンドが連続5回成功（以前は数回で再起動）。完全ではない。
+- **対処（追記, パッチ0014）**: 全PCIeデバイスを `power/control=on`（runtime-PM無効）に。
+  `0000:00:00.0` / `0000:01:00.0`(WiFi) / `0002:00:00.0` / `0002:01:00.0`。
+- **改善度**: 0010+0012+0013+0014 でサスペンドが **7〜9回連続成功**（以前は数回で再起動）。
+  ただし **約10回に1回は再起動**（完全ではない）。
 - **残るハング要因（判明）**: `spdaemon: spss_utils [spss_wait_for_event]: Wait for event [1] timeout [60] sec expired`
-  → **Samsung センサープロセッサ(`spss`)がサスペンド中に60秒タイムアウト**。次は `spss`/`slpi`/`adsp` の
-  サスペンド経路（`spcom`/`subsys-pil`）を疑う。SPI(`spi_geni`)・PCIe RC2 もログに残る。
+  → **Samsung センサープロセッサ(`spss`)がサスペンド中に60秒タイムアウト**。`spcom` に suspend フックは無い。
+  `spi_geni`(SPI)・`sec_ts`(タッチ)・`msm_pcie_drv_suspend RC2` もログに残る。次は `spss`/`slpi`/`adsp` の
+  サスペンド経路、SPI/タッチの suspend no-op を疑う。
 - **検証方法（重要）**:
   1. WiFi ADB を張る（`adb tcpip 5555` → `adb connect <ip>:5555`）。
   2. **USB接続中はサスペンドできない**（`a600000.ssusb: Abort PM suspend / USB outside LPM`）。
