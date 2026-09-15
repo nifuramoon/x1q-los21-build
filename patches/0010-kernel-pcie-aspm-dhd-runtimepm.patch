@@ -1,0 +1,47 @@
+diff --git a/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c b/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
+index acf1af81df90..2e2668a72d97 100644
+--- a/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
++++ b/drivers/net/wireless/broadcom/bcmdhd_101_16/dhd_pcie_linux.c
+@@ -2954,6 +2954,12 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
+ 	uint64 curr_time_ns;
+ #endif /* DHD_KERNEL_SCHED_DEBUG && DHD_FW_COREDUMP */
+ 
++	/* Disable the Broadcom WiFi PCIe runtime-PM suspend.
++	 * On battery / screen-off the ASPM L1 suspend path
++	 * (dhdpcie_set_suspend_resume) hangs and stalls the RPMh, which trips the
++	 * secure watchdog and reboots the device. Keep the WiFi PCIe awake. */
++	return FALSE;
++
+ 	bus = dhd->bus;
+ 
+ 	DHD_GENERAL_LOCK(dhd, flags);
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index beb9b21..df05f2e 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -8,6 +8,13 @@ include device/samsung/sm8250-common/BoardConfigCommon.mk
+ 
+ DEVICE_PATH := device/samsung/x1q
+ 
++# Root (LineageOS built-in su / adb_root)
++WITH_SU := true
++
++# Allow copying GApps prebuilt APK/ELF files via PRODUCT_COPY_FILES (gapps/gapps.mk)
++BUILD_BROKEN_PREBUILT_APK_PRODUCT_COPY_FILES := true
++BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
++
+ # Camera
+ SOONG_CONFIG_samsungCameraVars += extra_ids
+ SOONG_CONFIG_samsungCameraVars_extra_ids := 52 # telephoto
+@@ -21,6 +28,11 @@ DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/configs/manifest_nfc.xml
+ # Kernel
+ TARGET_KERNEL_CONFIG += vendor/samsung/x1q.config
+ 
++# PCIe ASPM off: on battery/screen-off the WiFi (Broadcom PCIe) ASPM L1 suspend
++# path hangs and stalls the RPMh, tripping the secure watchdog (spontaneous
++# reboots). Disable PCIe ASPM to avoid the L1 hang.
++BOARD_KERNEL_CMDLINE += pcie_aspm=off
++
+ # OTA assert
+ TARGET_OTA_ASSERT_DEVICE := x1q
+ 
