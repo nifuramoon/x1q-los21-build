@@ -1,0 +1,17 @@
+diff --git a/drivers/motor/cs40l2x.c b/drivers/motor/cs40l2x.c
+index 629c44c5dc23..17f6da0c02fc 100644
+--- a/drivers/motor/cs40l2x.c
++++ b/drivers/motor/cs40l2x.c
+@@ -9552,6 +9552,12 @@ static int __maybe_unused cs40l2x_suspend(struct device *dev)
+ 
+ 	dev_info(dev, "Entering cs40l2x_suspend...\n");
+ 
++	/* Skip the haptics hibernate on system suspend. The CS40L2x hibernate
++	 * I2C command fails (-107 ENOTCONN) / stalls on this unit, hanging the
++	 * whole system suspend and tripping the secure watchdog (screen-off
++	 * reboot on battery). */
++	return 0;
++
+ #ifdef CONFIG_CS40L2X_SAMSUNG_FEATURE
+ 	if (!cs40l2x->vibe_init_success) {
+ 		pr_err("%s vib init fail, just return\n", __func__);

@@ -210,17 +210,24 @@ mka bacon -j4            # または mka systemimage / bootimage / vendorimage
   `dhdpcie_*`（Broadcom WiFi）, `qsee_rpmh: Srcs Busy` 等。
   WiFi の D3 ハンドシェイク（`dhdpcie_set_suspend_resume`）が ACK 待ちで固まると RPMh ごと停止し、
   セキュアWDT（`TZBSP_ERR_FATAL_NON_SECURE_WDT`）でリセット。
-- **対処（カーネル, パッチ0010/0012）**:
+- **対処（カーネル, パッチ0010/0012/0013）**:
   - `pcie_aspm=off`（cmdline）
   - `dhd_runtimepm_state()` no-op（runtime-PM）
-  - `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` no-op（**システムサスペンド時にWiFi PCIeを触らない**）
+  - `dhdpcie_pm_suspend()` / `dhdpcie_pm_system_suspend_noirq()` no-op（システムサスペンド時にWiFi PCIeを触らない）
+  - `cs40l2x_suspend()` no-op（ハプティクスのhibernate I2Cが-107で失敗/ハング）
+  - **効果**: サスペンドが連続5回成功（以前は数回で再起動）。完全ではない。
+- **残るハング要因（判明）**: `spdaemon: spss_utils [spss_wait_for_event]: Wait for event [1] timeout [60] sec expired`
+  → **Samsung センサープロセッサ(`spss`)がサスペンド中に60秒タイムアウト**。次は `spss`/`slpi`/`adsp` の
+  サスペンド経路（`spcom`/`subsys-pil`）を疑う。SPI(`spi_geni`)・PCIe RC2 もログに残る。
 - **検証方法（重要）**:
   1. WiFi ADB を張る（`adb tcpip 5555` → `adb connect <ip>:5555`）。
-  2. `su -c "echo mem > /sys/power/state"` は**USB接続中は失敗する**ので、
-     実際にUSBを外して画面OFFにする。
-  3. 再起動したら `SYSTEM_LAST_KMSG` / `/proc/reset_summary` / `rebootlog` を回収。
-  4. `cat /sys/power/suspend_stats/last_failed_dev` でサスペンドを拒否/失敗させたデバイスを確認。
-- **残候補（未検証）**: SPI(`spi_geni`)/タッチ(`sec_ts`)/ハプティクス(`cs40l2x`) の suspend no-op、
+  2. **USB接続中はサスペンドできない**（`a600000.ssusb: Abort PM suspend / USB outside LPM`）。
+     ソフトで外すには `echo none > /sys/devices/platform/soc/a600000.ssusb/mode`
+     （USB ADBは切れるがWiFi ADBは残る）。物理的に外してもよい。
+  3. `su -c "echo +15 > /sys/class/rtc/rtc0/wakealarm; echo mem > /sys/power/state"` を繰り返す。
+  4. `cat /sys/power/suspend_stats/{success,fail,last_failed_dev}` で確認。
+  5. 再起動したら `SYSTEM_LAST_KMSG` / `/proc/reset_summary` / `rebootlog` を回収。
+- **残候補（未検証）**: `spss`/`slpi`/`adsp` のサスペンド回避、SPI(`spi_geni`)/タッチ(`sec_ts`) suspend no-op、
   ディスプレイ/DP suspend、watchdog bite-time 延長。
 - **注意**: 現状は「USB接続中は安定、バッテリー+画面OFFで稀に再起動」のレベル。
   daily driver として致命的ではないが、完全解決にはカーネルのサスペンド経路の特定が必要。
