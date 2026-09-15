@@ -1,0 +1,30 @@
+diff --git a/drivers/pci/controller/pci-msm.c b/drivers/pci/controller/pci-msm.c
+index 4e4958303928..c6bec8315215 100644
+--- a/drivers/pci/controller/pci-msm.c
++++ b/drivers/pci/controller/pci-msm.c
+@@ -8664,6 +8664,12 @@ static int msm_pcie_pm_suspend(struct pci_dev *dev,
+ #endif
+ 	struct msm_pcie_dev_t *pcie_dev = PCIE_BUS_PRIV_DATA(dev->bus);
+ 
++	/* Keep the PCIe RC (and its modem MHI endpoint) powered across system
++	 * suspend. Suspending the RC2 link has been observed to stall the whole
++	 * system suspend and trip the TrustZone watchdog (spontaneous reboot on
++	 * screen-off / battery). */
++	return ret;
++
+ 	PCIE_DBG(pcie_dev, "RC%d: entry\n", pcie_dev->rc_idx);
+ #ifdef CONFIG_SEC_PANIC_PCIE_ERR
+ 	if (!pcie_dev->ignore_pcie_error && pcie_dev->aer_irq_counter) {
+@@ -9083,6 +9089,12 @@ static int msm_pcie_drv_suspend(struct msm_pcie_dev_t *pcie_dev,
+ 	int ret, i;
+ 	u32 val;
+ 
++	/* Skip the PCIe "DRV" suspend that talks to the secure world over
++	 * rpmsg. If the secure side does not reply, the whole system suspend
++	 * stalls and the TrustZone watchdog resets the device (spontaneous
++	 * reboot on screen-off / battery). */
++	return 0;
++
+ 	if (!rpdev) {
+ 		PCIE_ERR(pcie_dev, "PCIe: RC%d: DRV: no rpmsg device\n",
+ 			pcie_dev->rc_idx);
