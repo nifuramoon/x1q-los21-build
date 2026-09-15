@@ -1,0 +1,13 @@
+diff --git a/arch/arm64/boot/dts/vendor/qcom/kona.dtsi b/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+index dc8ad0a1c889..966ab7d74753 100644
+--- a/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
++++ b/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+@@ -679,7 +679,7 @@
+ 		reg-names = "wdt-base";
+ 		interrupts = <0 0 IRQ_TYPE_LEVEL_HIGH>,
+ 				 <0 1 IRQ_TYPE_LEVEL_HIGH>;
+-		qcom,bark-time = <11000>;
++		qcom,bark-time = <30000>;
+ 		qcom,pet-time = <9360>;
+ 		qcom,wakeup-enable;
+ 		qcom,ipi-ping;
