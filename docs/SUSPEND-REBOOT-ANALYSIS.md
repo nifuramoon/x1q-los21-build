@@ -111,6 +111,27 @@ dmesg | grep -iE 'spss|spdaemon|spcom|aop|adsp|slpi|MDM|modem'
 
 ---
 
+## 4.4 AstroOS との比較（2026-09-16）
+
+`Desktop/SCG01_flash/images/AstroOS_4.0.0_20260615_x1q.zip` と
+`lineage-21.0-20240714-UNOFFICIAL-x1q.zip` の boot.img を比較。
+
+| | AstroOS | 元LOS21 (2024) |
+|---|---|---|
+| kernel | **AstroKernel 4.19.325-g7f1b0a81c99e** | 4.19.306-perf-gff51b3d968f1 |
+| CONFIG_QCOM_WATCHDOG_V2 | **OFF** | ON |
+| CONFIG_SOFT_WATCHDOG | **ON** | OFF |
+| CONFIG_DEBUG_KERNEL | OFF | ON |
+| CONFIG_BUS_AUTO_SUSPEND | y | (なし) |
+| CONFIG_CNSS2_QMI / CNSS_QMI_SVC | y / y | - / OFF |
+| DTB | 実質同一（spss/aop/slpi のアドレス一致） | 同 |
+
+- AstroKernel のソースは GitHub 検索で見つからず（非公開）。
+- **差異の本命候補: QCOM_WATCHDOG_V2**。`Non Secure Watchdog Bark` でリセットする経路が
+  AstroOS では無効化されている。
+- → **パッチ0022**（`CONFIG_QCOM_WATCHDOG_V2=n` + `CONFIG_SOFT_WATCHDOG=y`、
+  `emerg_pet_watchdog()` スタブ追加）をビルド済み（build29b, 17:10）。
+
 ## 5. 現状のカーネル構成（v2.0相当）
 
 有効パッチ: 0001, 0010, 0012, 0013, 0015, 0016, 0017, 0018, 0019, 0020, 0021
