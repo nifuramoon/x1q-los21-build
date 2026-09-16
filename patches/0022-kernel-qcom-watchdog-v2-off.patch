@@ -1,0 +1,36 @@
+diff --git a/arch/arm64/configs/vendor/samsung/x1q.config b/arch/arm64/configs/vendor/samsung/x1q.config
+index b10a45db831c..24e60b0c57dd 100644
+--- a/arch/arm64/configs/vendor/samsung/x1q.config
++++ b/arch/arm64/configs/vendor/samsung/x1q.config
+@@ -115,3 +115,12 @@ CONFIG_ANDROID_TIMED_OUTPUT=y
+ CONFIG_MOTOR_DRV_CS40L2X=y
+ CONFIG_MOTOR_DRV_CS40L2X_PMIC_RESET=y
+ CONFIG_CS40L2X_SAMSUNG_FEATURE=y
++
++# Watchdog
++# Match AstroKernel (which runs fine on this device): do not use the QCOM
++# watchdog v2. It is suspected that the QCOM watchdog path escalates an AOP
++# firmware crash (aop_fsm_process_event -> abort) into a full-system
++# SECURE_WATCHDOG reset. Use the generic soft watchdog instead.
++# CONFIG_QCOM_WATCHDOG_V2 is not set
++CONFIG_SOFT_WATCHDOG=y
++CONFIG_WQ_WATCHDOG=y
+diff --git a/drivers/samsung/debug/sec_debug.c b/drivers/samsung/debug/sec_debug.c
+index d57347958ab2..931b40fac90f 100644
+--- a/drivers/samsung/debug/sec_debug.c
++++ b/drivers/samsung/debug/sec_debug.c
+@@ -1224,3 +1224,14 @@ void __deprecated sec_debug_set_thermal_upload(void)
+ 	sec_debug_set_upload_magic(0x776655ee);
+ 	sec_debug_set_upload_cause(UPLOAD_CAUSE_POWER_THERMAL_RESET);
+ }
++
++#ifndef CONFIG_QCOM_WATCHDOG_V2
++/*
++ * When the QCOM watchdog v2 driver is disabled, no one defines
++ * emerg_pet_watchdog(), but kernel/panic.c calls it unconditionally under
++ * CONFIG_SEC_DEBUG. Provide a stub so the kernel still links (matching
++ * AstroKernel, which builds without CONFIG_QCOM_WATCHDOG_V2).
++ */
++void emerg_pet_watchdog(void) {}
++EXPORT_SYMBOL(emerg_pet_watchdog);
++#endif
