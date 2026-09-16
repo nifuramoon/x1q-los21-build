@@ -1,0 +1,27 @@
+diff --git a/arch/arm64/boot/dts/vendor/qcom/kona.dtsi b/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+index dc8ad0a1c889..d4b7f4395806 100644
+--- a/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
++++ b/arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+@@ -679,7 +679,7 @@
+ 		reg-names = "wdt-base";
+ 		interrupts = <0 0 IRQ_TYPE_LEVEL_HIGH>,
+ 				 <0 1 IRQ_TYPE_LEVEL_HIGH>;
+-		qcom,bark-time = <11000>;
++		qcom,bark-time = <30000>;
+ 		qcom,pet-time = <9360>;
+ 		qcom,wakeup-enable;
+ 		qcom,ipi-ping;
+@@ -3886,7 +3886,12 @@
+ 		clock-names = "xo";
+ 		qcom,proxy-clock-names = "xo";
+ 		qcom,pil-generic-irq-handler;
+-		status = "ok";
++		/* Disabled: the Samsung sensor processor (SP/SPSS) is suspected
++		 * of crashing the AOP firmware (aop_fsm_process_event -> abort ->
++		 * TZBSP_ERR_FATAL_RPM_ERR reset). Every boot also logs
++		 * "spss_utils: wait for event [1] timeout [60] sec expired".
++		 * Do not load the SP to test whether it is the trigger. */
++		status = "disabled";
+ 
+ 		qcom,signal-aop;
+ 		qcom,complete-ramdump;
