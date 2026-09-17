@@ -163,6 +163,28 @@ interface ISehRadioBridgeIndication {
 - つまり**「生バイトのモデムブリッジ」**。実装すれば AIDL 側を HIDL `ISehBridge@2.0` に中継するだけで良い（簡単な形）。
 - これが無いと毎秒リトライでサスペンドに入りにくい＋VoLTE の raw ブリッジが不成立。
 
+### HIDL `ISehBridge@2.0` も完全マッピング（`vendor.samsung.hardware.radio.bridge@2.0.so` から復元）
+AIDL V1 と**ほぼ1:1対応**:
+```hal
+interface ISehBridge {
+  setResponseFunctions(ISehBridgeResponse rsp, ISehBridgeIndication ind);
+  sendRequestRaw(int32_t type, vec<uint8_t> data, int32_t id);
+};
+interface ISehBridgeResponse {
+  sendRequestRawResponse(android.hardware.radio@1.0::RadioResponseInfo info, vec<uint8_t> data, int32_t id);
+};
+interface ISehBridgeIndication {
+  hookRaw(int32_t type, vec<uint8_t> data, int32_t id);
+  openFd(string path, int32_t flags, int32_t mode) generates (int32_t fd);
+  execute(string command);
+};
+```
+→ **シム方針（確定）**: AIDL `ISehRadioBridge` サービスを実装し、各メソッドを
+HIDL `ISehBridge@2.0`（`sehradiomanager` 等が提供）へそのまま中継する。
+- **ブロッカー**: AIDL 側の型 `SehRadioResponseInfo` / `SehRadioIndicationType` /
+  `SehRadioRequestType` の**正確な定義**（parcelable/enum）がツリーに無く、
+  `-V1-ndk.so` からの完全復元は困難。型定義を入手できれば実装可能。
+
 ## 5. 現状のカーネル構成（v2.0相当）
 
 有効パッチ: 0001, 0010, 0012, 0013, 0015, 0016, 0017, 0018, 0019, 0020, 0021
