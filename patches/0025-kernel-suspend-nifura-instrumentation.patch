@@ -1,0 +1,100 @@
+diff --git a/drivers/base/power/main.c b/drivers/base/power/main.c
+index 6502fc1c7e65..61539468bf27 100644
+--- a/drivers/base/power/main.c
++++ b/drivers/base/power/main.c
+@@ -1918,7 +1918,9 @@ int dpm_suspend(pm_message_t state)
+ 		get_device(dev);
+ 		mutex_unlock(&dpm_list_mtx);
+ 
++		pr_err("NIFURA-DPM: suspending %s\n", dev_name(dev));
+ 		error = device_suspend(dev);
++		pr_err("NIFURA-DPM: %s suspend err=%d\n", dev_name(dev), error);
+ 
+ 		mutex_lock(&dpm_list_mtx);
+ 		if (error) {
+diff --git a/drivers/soc/qcom/rpmh-rsc.c b/drivers/soc/qcom/rpmh-rsc.c
+index daffd30d37e2..63718f9e1aba 100644
+--- a/drivers/soc/qcom/rpmh-rsc.c
++++ b/drivers/soc/qcom/rpmh-rsc.c
+@@ -452,6 +452,7 @@ static int tcs_write(struct rsc_drv *drv, const struct tcs_request *msg)
+ int rpmh_rsc_send_data(struct rsc_drv *drv, const struct tcs_request *msg)
+ {
+ 	int ret;
++	int busy_cnt = 0;
+ 
+ 	if (!msg || !msg->cmds || !msg->num_cmds ||
+ 	    msg->num_cmds > MAX_RPMH_PAYLOAD) {
+@@ -462,9 +463,16 @@ int rpmh_rsc_send_data(struct rsc_drv *drv, const struct tcs_request *msg)
+ 	do {
+ 		ret = tcs_write(drv, msg);
+ 		if (ret == -EBUSY) {
+-			pr_info_ratelimited("DRV:%s TCS Busy, retrying RPMH message send: addr=%#x\n",
+-					    drv->name, msg->cmds[0].addr);
++			busy_cnt++;
++			if (busy_cnt == 1 || (busy_cnt & 0xfff) == 0)
++				pr_err("NIFURA-RPMH: %s TCS Busy retry #%d addr=%#x\n",
++				       drv->name, busy_cnt, msg->cmds[0].addr);
+ 			udelay(10);
++			if (busy_cnt > 10000000) {
++				pr_err("NIFURA-RPMH: %s TCS busy >10M retries, stuck!\n",
++				       drv->name);
++				BUG();
++			}
+ 		}
+ 	} while (ret == -EBUSY);
+ 
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+index 6d87633067d6..05448c8048dd 100644
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -512,6 +512,7 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 	suspend_console();
+ 	suspend_test_start();
+ 	error = dpm_suspend_start(PMSG_SUSPEND);
++	pr_err("NIFURA-SUSPEND: dpm_suspend_start returned %d\n", error);
+ 	if (error) {
+ 		pr_err("Some devices failed to suspend, or early wake event detected\n");
+ 		log_suspend_abort_reason(
+@@ -523,7 +524,10 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 		goto Recover_platform;
+ 
+ 	do {
++		pr_err("NIFURA-SUSPEND: calling suspend_enter\n");
+ 		error = suspend_enter(state, &wakeup);
++		pr_err("NIFURA-SUSPEND: suspend_enter returned %d wakeup=%d\n",
++		       error, wakeup);
+ 	} while (!error && !wakeup && platform_suspend_again(state));
+ 
+  Resume_devices:
+@@ -588,15 +592,19 @@ static int enter_state(suspend_state_t state)
+ 
+ #ifndef CONFIG_SUSPEND_SKIP_SYNC
+ 	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
++	pr_err("NIFURA-SUSPEND: before ksys_sync\n");
+ 	pr_info("Syncing filesystems ... ");
+ 	ksys_sync();
++	pr_err("NIFURA-SUSPEND: after ksys_sync\n");
+ 	pr_cont("done.\n");
+ 	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
+ #endif
+ 
++	pr_err("NIFURA-SUSPEND: before suspend_prepare\n");
+ 	pr_info("Preparing system for sleep (%s)\n", mem_sleep_labels[state]);
+ 	pm_suspend_clear_flags();
+ 	error = suspend_prepare(state);
++	pr_err("NIFURA-SUSPEND: after suspend_prepare err=%d\n", error);
+ 	if (error)
+ 		goto Unlock;
+ 
+@@ -604,9 +612,11 @@ static int enter_state(suspend_state_t state)
+ 		goto Finish;
+ 
+ 	trace_suspend_resume(TPS("suspend_enter"), state, false);
++	pr_err("NIFURA-SUSPEND: before suspend_devices_and_enter\n");
+ 	pr_info("Suspending system (%s)\n", mem_sleep_labels[state]);
+ 	pm_restrict_gfp_mask();
+ 	error = suspend_devices_and_enter(state);
++	pr_err("NIFURA-SUSPEND: after suspend_devices_and_enter err=%d\n", error);
+ 	pm_restore_gfp_mask();
+ 
+  Finish:
