@@ -132,6 +132,37 @@ dmesg | grep -iE 'spss|spdaemon|spcom|aop|adsp|slpi|MDM|modem'
 - → **パッチ0022**（`CONFIG_QCOM_WATCHDOG_V2=n` + `CONFIG_SOFT_WATCHDOG=y`、
   `emerg_pet_watchdog()` スタブ追加）をビルド済み（build29b, 17:10）。
 
+## 4.5 RIL AIDL ブリッジ欠落（`ISehRadioBridge`）— 2026-09-18
+
+`s20volte_ims` 有効でも毎秒これが出てCPUがidleしない:
+```
+servicemanager: 'vendor.samsung.hardware.radio.bridge.ISehRadioBridge/slot1' could not be found
+```
+→ **フレームワーク/`multiclientd` が要求する AIDL `ISehRadioBridge` がベンダーに無い**。
+ベンダー(A11)は HIDL `@2.0::ISehBridge` のみ。`manifest_radio.xml` が HIDL を宣言、
+`samsung_framework_compatibility_matrix.xml` が AIDL `ISehRadioBridge`（slot1/slot2, version 1）を必須宣言。
+
+### AIDL インタフェース完全マッピング（`vendor.samsung.hardware.radio.bridge-V1-ndk.so` のシンボルから復元）
+```aidl
+interface ISehRadioBridge {
+    void setResponseFunctions(ISehRadioBridgeResponse rsp, ISehRadioBridgeIndication ind);
+    void sendRequestRaw(int type, in byte[] data, int id);
+}
+interface ISehRadioBridgeResponse {
+    void sendRequestRawResponse(SehRadioResponseInfo info, in byte[] data, int id);
+}
+interface ISehRadioBridgeIndication {
+    void hookRaw(SehRadioIndicationType type, in byte[] data, int id);
+    void openFd(String path, int flags, int mode, out ParcelFileDescriptor fd);
+    void execute(String command);
+    void convertToUtf8(String src, int len, String enc, out String out);
+}
+```
+依存型: `SehRadioResponseInfo` / `SehRadioIndicationType` / `SehRadioRequestType`（`aidl::vendor::samsung::hardware::radio::...`）。
+
+- つまり**「生バイトのモデムブリッジ」**。実装すれば AIDL 側を HIDL `ISehBridge@2.0` に中継するだけで良い（簡単な形）。
+- これが無いと毎秒リトライでサスペンドに入りにくい＋VoLTE の raw ブリッジが不成立。
+
 ## 5. 現状のカーネル構成（v2.0相当）
 
 有効パッチ: 0001, 0010, 0012, 0013, 0015, 0016, 0017, 0018, 0019, 0020, 0021
