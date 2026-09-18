@@ -133,7 +133,6 @@ dmesg | grep -iE 'spss|spdaemon|spcom|aop|adsp|slpi|MDM|modem'
   `emerg_pet_watchdog()` スタブ追加）をビルド済み（build29b, 17:10）。
 
 ## 4.5 RIL AIDL ブリッジ欠落（`ISehRadioBridge`）— 2026-09-18
-
 `s20volte_ims` 有効でも毎秒これが出てCPUがidleしない:
 ```
 servicemanager: 'vendor.samsung.hardware.radio.bridge.ISehRadioBridge/slot1' could not be found
@@ -184,6 +183,38 @@ HIDL `ISehBridge@2.0`（`sehradiomanager` 等が提供）へそのまま中継�
 - **ブロッカー**: AIDL 側の型 `SehRadioResponseInfo` / `SehRadioIndicationType` /
   `SehRadioRequestType` の**正確な定義**（parcelable/enum）がツリーに無く、
   `-V1-ndk.so` からの完全復元は困難。型定義を入手できれば実装可能。
+
+## 4.6 サスペンドハングの最下層特定（NIFURA計装で判明）— 2026-09-18
+
+`no_console_suspend` + NIFURA printk計装（`NIFURA-SUSPEND`/`NIFURA-DPM`/`NIFURA-LATE`/
+`NIFURA-NOIRQ`/`NIFURA-LPM`/`NIFURA-CPU`）で、ハング地点を特定した。
+
+### ① バッテリー時のサスペンド再起動（主因）
+```
+全デバイスsuspend(late/noirq含む)は成功 → suspend_enter
+  → "Disabling non-boot CPUs ..."
+  → CPU1〜CPU6 は psci killed 成功
+  → CPU7 の cpu_down() が ~14秒ハング（psci: CPU7 killed が出ない）
+  → watchdog bark（サスペンド中はpetできない）→ TZBSP_ERR_FATAL_NON_SECURE_WDT
+```
+- 犯人: **CPU7のホットアンプラグ（cpu_down(7)）がハング**。タスク移行（stop_machine）か
+  CPUHP_DOWN_PREPARE notifier のどちらか（`NIFURA-CPU` で切り分け中）。
+- 注: これは「最後の非ブートCPU」に起きている可能性（CPU7固有ではないかも）。
+
+### ② 充電時の再起動（サスペンド無関係・別原因）
+```
+binder: page allocation failure (GFP_HIGHUSER_MOVABLE|__GFP_CMA, fatal_signal:1)
+  → 全CPUが watchdog pet を停止（cpu alive mask from last pet 00）
+  → Watchdog bark（last pet から ~11.7秒後）
+```
+- サスペンドせずに（充電中）落ちる別経路。メモリ確保失敗→全CPUハング→WDT。
+- 低メモリ/CMA枯渇 or binderのメモリバグが疑わしい。
+
+### リセット原因の変遷（全てパワー/サスペンド経路）
+`Non Secure Watchdog Bark` / `RPM_ERR` / `RPM_WDOG` / `XPU_VIOLATION` /
+`KERNEL PANIC (mhi_pm_state != M3 = 我々のMHIパッチ起因→修正)` / `sd unrecoverable`。
+
+---
 
 ## 5. 現状のカーネル構成（v2.0相当）
 
