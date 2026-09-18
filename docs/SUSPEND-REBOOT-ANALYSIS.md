@@ -210,6 +210,13 @@ binder: page allocation failure (GFP_HIGHUSER_MOVABLE|__GFP_CMA, fatal_signal:1)
 - サスペンドせずに（充電中）落ちる別経路。メモリ確保失敗→全CPUハング→WDT。
 - 低メモリ/CMA枯渇 or binderのメモリバグが疑わしい。
 
+### ★ 統一的仮説: CPUホットアンプラグ（オフライン）が壊れている
+- ②のbark直前にも `migration/4: IRQ 5: no longer affine to CPU4` が出ており、
+  **充電中もCPU4のオフライン/IRQ移行が走ってハング**している。
+- つまり①（CPU7オフライン14秒ハング）と②は**同一根**の可能性が高い:
+  **base LOS21カーネルのCPU hotplug（オフライン）経路が壊れている**。
+- 対処候補: CPUHP_DOWN_PREPARE notifier / stop_machine移行の特定（`NIFURA-CPU`計装済み）。
+
 ### リセット原因の変遷（全てパワー/サスペンド経路）
 `Non Secure Watchdog Bark` / `RPM_ERR` / `RPM_WDOG` / `XPU_VIOLATION` /
 `KERNEL PANIC (mhi_pm_state != M3 = 我々のMHIパッチ起因→修正)` / `sd unrecoverable`。
